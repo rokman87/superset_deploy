@@ -1,0 +1,346 @@
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+# -----------------------------------------------------------------------
+# We don't support docker compose for production environments.
+# If you choose to use this type of deployment make sure to
+# create you own docker environment file (docker/.env) with your own
+# unique random secure passwords and SECRET_KEY.
+#
+# For verbose logging during development:
+# - Set SUPERSET_LOG_LEVEL=debug in docker/.env-local for detailed Superset logs
+# -----------------------------------------------------------------------
+
+x-superset-user: &superset-user root
+
+x-common-build: &common-build
+  context: .
+  target: ${SUPERSET_BUILD_TARGET:-dev}
+  cache_from:
+    - apache/superset-cache:3.10-slim-bookworm
+  args:
+    DEV_MODE: "true"
+    INCLUDE_CHROMIUM: ${INCLUDE_CHROMIUM:-false}
+    INCLUDE_FIREFOX: ${INCLUDE_FIREFOX:-false}
+    BUILD_TRANSLATIONS: ${BUILD_TRANSLATIONS:-false}
+
+services:
+  nginx:
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    image: nginx:latest
+    container_name: superset_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+    networks:
+      - default
+    depends_on:
+      - superset
+      - superset-websocket
+
+  redis:
+    image: redis:7
+    container_name: superset_cache
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    image: postgres:16
+    container_name: superset_db
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - db_home:/var/lib/postgresql/data
+      - ./docker/docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superset"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  superset:
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    build:
+      <<: *common-build
+    container_name: superset_app
+    command: ["/app/docker/docker-bootstrap.sh", "app"]
+    restart: unless-stopped
+    ports:
+      - 8088:8088
+      - 8081:8081
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: *superset-user
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      superset-websocket:
+        condition: service_started
+    volumes:
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+    environment:
+      - GLOBAL_ASYNC_QUERIES_JWT_SECRET=${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      - REDIS_WEBSOCKET_DB=2
+      - FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES=true
+      - SUPERSET_ENV=${SUPERSET_ENV:-development}
+      - FLASK_ENV=${FLASK_ENV:-development}
+      - FLASK_APP=${FLASK_APP:-superset.app:create_app()}
+
+  superset-websocket:
+    container_name: superset_websocket
+    build: ./superset-websocket
+    ports:
+      - 8080:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./superset-websocket/src:/home/superset-websocket/src
+      - ./superset-websocket/package.json:/home/superset-websocket/package.json
+      - ./superset-websocket/package-lock.json:/home/superset-websocket/package-lock.json
+      - ./superset-websocket/tsconfig.json:/home/superset-websocket/tsconfig.json
+      - ./docker/superset-websocket/config.json:/home/superset-websocket/config.json
+      - websocket_node_modules:/home/superset-websocket/node_modules
+      - websocket_dist:/home/superset-websocket/dist
+    environment:
+      - PORT=8080
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=2
+      - REDIS_SSL=false
+      - JWT_SECRET=${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      - LOG_LEVEL=debug
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  superset-init:
+    build:
+      <<: *common-build
+    container_name: superset_init
+    command: ["/app/docker/docker-init.sh"]
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    user: *superset-user
+    volumes:
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+    environment:
+      - SUPERSET_LOAD_EXAMPLES=${SUPERSET_LOAD_EXAMPLES:-yes}
+    healthcheck:
+      disable: true
+
+  superset-node:
+    build:
+      context: .
+      target: superset-node
+      args:
+        DEV_MODE: "true"
+        BUILD_TRANSLATIONS: ${BUILD_TRANSLATIONS:-false}
+    environment:
+      BUILD_SUPERSET_FRONTEND_IN_DOCKER: true
+      NPM_RUN_PRUNE: false
+      SCARF_ANALYTICS: "${SCARF_ANALYTICS:-}"
+      superset: "http://superset:8088"
+    ports:
+      - "127.0.0.1:9000:9000"
+    container_name: superset_node
+    command: ["/app/docker/docker-frontend.sh"]
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    volumes:
+      # Backend volumes
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+      # Frontend volumes
+      - ./superset-frontend/src:/app/superset-frontend/src
+      - ./superset-frontend/package.json:/app/superset-frontend/package.json
+      - ./superset-frontend/package-lock.json:/app/superset-frontend/package-lock.json
+      - ./superset-frontend/tsconfig.json:/app/superset-frontend/tsconfig.json
+      - ./superset-frontend/.eslintrc:/app/superset-frontend/.eslintrc
+      - ./superset-frontend/.prettierrc:/app/superset-frontend/.prettierrc
+      - ./superset-frontend/webpack.config.js:/app/superset-frontend/webpack.config.js
+      - ./superset-frontend/cypress:/app/superset-frontend/cypress
+      - ./superset-frontend/plugins:/app/superset-frontend/plugins
+      - ./superset-frontend/translations:/app/superset-frontend/translations
+      - ./superset-frontend/spec:/app/superset-frontend/spec
+      - superset_frontend_node_modules:/app/superset-frontend/node_modules
+    depends_on:
+      - superset
+    healthcheck:
+      disable: true
+
+  superset-worker:
+    build:
+      <<: *common-build
+    container_name: superset_worker
+    command: ["/app/docker/docker-bootstrap.sh", "worker"]
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    environment:
+      CELERYD_CONCURRENCY: 2
+      GLOBAL_ASYNC_QUERIES_JWT_SECRET: ${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      REDIS_WEBSOCKET_DB: 2
+    restart: unless-stopped
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    user: *superset-user
+    volumes:
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A superset.tasks.celery_app:app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  superset-worker-beat:
+    build:
+      <<: *common-build
+    container_name: superset_worker_beat
+    command: ["/app/docker/docker-bootstrap.sh", "beat"]
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    environment:
+      GLOBAL_ASYNC_QUERIES_JWT_SECRET: ${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      REDIS_WEBSOCKET_DB: 2
+    restart: unless-stopped
+    depends_on:
+      superset-worker:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    user: *superset-user
+    volumes:
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+    healthcheck:
+      disable: true
+
+  superset-tests-worker:
+    build:
+      <<: *common-build
+    container_name: superset_tests_worker
+    command: ["/app/docker/docker-bootstrap.sh", "worker"]
+    env_file:
+      - path: docker/.env
+        required: true
+      - path: docker/.env-local
+        required: false
+    profiles:
+      - optional
+    environment:
+      DATABASE_HOST: localhost
+      DATABASE_DB: test
+      REDIS_CELERY_DB: 2
+      REDIS_RESULTS_DB: 3
+      REDIS_HOST: localhost
+      CELERYD_CONCURRENCY: 8
+    network_mode: host
+    depends_on:
+      superset-init:
+        condition: service_completed_successfully
+    user: *superset-user
+    volumes:
+      - ./docker:/app/docker
+      - ./superset:/app/superset
+      - superset_home:/app/superset_home
+      - ./tests:/app/tests
+    healthcheck:
+      test: ["CMD-SHELL", "celery inspect ping -A superset.tasks.celery_app:app -d celery@$$HOSTNAME"]
+
+volumes:
+  superset_home:
+    external: false
+  db_home:
+    external: false
+  redis:
+    external: false
+  superset_frontend_node_modules:
+    external: false
+  websocket_node_modules:
+    external: false
+  websocket_dist:
+    external: false

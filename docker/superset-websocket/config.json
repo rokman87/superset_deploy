@@ -1,0 +1,25 @@
+{
+  "port": 8080,
+  "logLevel": "debug",
+  "logToFile": false,
+  "statsd": {
+    "host": "127.0.0.1",
+    "port": 8125,
+    "globalTags": []
+  },
+  "redis": {
+    "port": 6379,
+    "host": "redis",
+    "password": "",
+    "db": 2,
+    "ssl": false
+  },
+  "redisStreamPrefix": "async-events-",
+  "jwtAlgorithms": ["HS256"],
+  "jwtSecret": "CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS",
+  "jwtCookieName": "async-token",
+  "pingSocketsIntervalMs": 30000,
+  "socketResponseTimeoutMs": 10000,
+  "gcChannelsIntervalMs": 60000,
+  "path": "/ws"
+}
