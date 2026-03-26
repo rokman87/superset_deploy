@@ -30,7 +30,7 @@ const {
   WebpackManifestPlugin,
   getCompilerHooks,
 } = require('webpack-manifest-plugin');
-const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
+// const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const parsedArgs = require('yargs').argv;
 const Visualizer = require('webpack-visualizer-plugin2');
 const getProxyConfig = require('./webpack.proxy-config');
@@ -158,20 +158,20 @@ if (!isDevMode) {
 
   // Runs type checking on a separate process to speed up the build
   plugins.push(
-    new ForkTsCheckerWebpackPlugin({
-      typescript: {
-        memoryLimit: 4096,
-        build: true,
-        exclude: [
-          '**/node_modules/**',
-          '**/dist/**',
-          '**/coverage/**',
-          '**/storybook/**',
-          '**/*.stories.{ts,tsx,js,jsx}',
-          '**/*.{test,spec}.{ts,tsx,js,jsx}',
-        ],
-      },
-    }),
+    // new ForkTsCheckerWebpackPlugin({
+    //   typescript: {
+    //     memoryLimit: 4096,
+    //     build: true,
+    //     exclude: [
+    //       '**/node_modules/**',
+    //       '**/dist/**',
+    //       '**/coverage/**',
+    //       '**/storybook/**',
+    //       '**/*.stories.{ts,tsx,js,jsx}',
+    //       '**/*.{test,spec}.{ts,tsx,js,jsx}',
+    //     ],
+    //   },
+    // }),
   );
 }
 
@@ -586,14 +586,3 @@ const smp = new SpeedMeasurePlugin({
 });
 
 module.exports = smp.wrap(config);
-module.exports.plugins = (module.exports.plugins || []).filter(
-  plugin => plugin?.constructor?.name !== 'ForkTsCheckerWebpackPlugin',
-);
-
-module.exports.parallelism = 1;
-module.exports.devtool = false;
-
-module.exports.optimization = {
-  ...(module.exports.optimization || {}),
-  minimize: false,
-};

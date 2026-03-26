@@ -1,7 +1,51 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { styled } from '@superset-ui/core';
 
-const Styles = styled.div`
+const HEADER_ROW_HEIGHT = 34;
+
+type StyleProps = {
+  headerBg?: string;
+  headerTextColor?: string;
+  grandTotalBg?: string;
+  expandColor?: string;
+};
+
+type TreeNode = {
+  name: string;
+  path: string;
+  isLeaf: boolean;
+  key?: string;
+  children?: TreeNode[];
+};
+
+type InternalTreeNode = {
+  name: string;
+  path: string;
+  isLeaf: boolean;
+  key?: string;
+  children: Map<string, InternalTreeNode>;
+};
+
+type PivotCol = {
+  key: string;
+  values?: string[];
+};
+
+type PivotRow = {
+  key: string;
+  values?: string[];
+};
+
+type PivotData = {
+  rows: PivotRow[];
+  cols: PivotCol[];
+  values: Record<string, Record<string, number>>;
+  rowHierarchy?: TreeNode[];
+};
+
+type NodeAgg = Record<string, Record<string, number>>;
+
+const Styles = styled.div<StyleProps>`
   width: 100%;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -21,17 +65,26 @@ const Styles = styled.div`
   }
 
   thead th {
-    background-color: ${({ headerBg }: any) => headerBg || '#2c3e50'};
-    color: ${({ headerTextColor }: any) => headerTextColor || '#fff'};
+    background-color: ${({ headerBg }) => headerBg || '#2c3e50'};
+    color: ${({ headerTextColor }) => headerTextColor || '#fff'};
     padding: 8px 12px;
     font-weight: 600;
     white-space: nowrap;
     border-right: 1px solid rgba(255,255,255,0.12);
     border-bottom: 1px solid rgba(0,0,0,0.15);
     position: sticky;
-    top: 0;
     z-index: 30;
     box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+  }
+
+  thead tr:nth-child(1) th {
+    top: 0;
+    z-index: 40;
+  }
+
+  thead tr:nth-child(2) th {
+    top: ${HEADER_ROW_HEIGHT}px;
+    z-index: 39;
   }
 
   tbody td {
@@ -41,7 +94,7 @@ const Styles = styled.div`
     background: #fff;
   }
 
-  .row-header td {
+  .row-header {
     background-color: #f5f5f5;
     font-weight: 500;
     cursor: pointer;
@@ -62,7 +115,7 @@ const Styles = styled.div`
   }
 
   .total-row td {
-    background-color: ${({ grandTotalBg }: any) => grandTotalBg || '#2c3e50'};
+    background-color: ${({ grandTotalBg }) => grandTotalBg || '#2c3e50'};
     color: #fff;
     font-weight: 700;
     border-right: 1px solid rgba(255,255,255,0.12);
@@ -73,11 +126,61 @@ const Styles = styled.div`
     width: 16px;
     text-align: center;
     margin-right: 4px;
-    color: ${({ expandColor }: any) => expandColor || '#7f8c8d'};
+    color: ${({ expandColor }) => expandColor || '#7f8c8d'};
   }
 `;
 
-type NodeAgg = Record<string, Record<string, number>>;
+function buildRowHierarchyFromRows(rowsArray: PivotRow[]): TreeNode[] {
+  const root: { children: Map<string, InternalTreeNode> } = {
+    children: new Map<string, InternalTreeNode>(),
+  };
+
+  rowsArray.forEach(r => {
+    let curChildren = root.children;
+    const pathParts: string[] = [];
+
+    (r.values || []).forEach((val: string, i: number) => {
+      const name = String(val);
+      pathParts.push(name);
+      const path = pathParts.join(' → ');
+
+      if (!curChildren.has(name)) {
+        curChildren.set(name, {
+          name,
+          path,
+          isLeaf: false,
+          key: undefined,
+          children: new Map<string, InternalTreeNode>(),
+        });
+      }
+
+      const node = curChildren.get(name)!;
+
+      if (i === (r.values || []).length - 1) {
+        node.isLeaf = true;
+        node.key = r.key;
+      }
+
+      curChildren = node.children;
+    });
+  });
+
+  const toNodes = (m: Map<string, InternalTreeNode>): TreeNode[] =>
+    Array.from(m.values())
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      .map((n): TreeNode => {
+        const children: TreeNode[] = toNodes(n.children);
+        return {
+          name: n.name,
+          path: n.path,
+          isLeaf: n.isLeaf,
+          key: n.key,
+          children: children.length ? children : undefined,
+        };
+      });
+
+  return toNodes(root.children);
+}
 
 export default function SupersetPluginChartMyfirst(props: any) {
   const {
@@ -85,11 +188,12 @@ export default function SupersetPluginChartMyfirst(props: any) {
     rows = [],
     columns = [],
     metrics = [],
-
     showSubtotals = true,
-    showRowTotals = true,      // RIGHT Total column
-    showColumnTotals = true,   // BOTTOM Grand Total row
-
+    showGrandTotals = true,
+    showRowTotals: showRowTotalsFromProps,
+    showColumnTotals: showColumnTotalsFromProps,
+    showRowTotalsProp,
+    showColumnTotalsProp,
     compactDisplay = false,
     headerBg,
     headerTextColor,
@@ -99,15 +203,47 @@ export default function SupersetPluginChartMyfirst(props: any) {
     width,
   } = props;
 
-  const rowHierarchy = useMemo(() => data?.rowHierarchy || [], [data]);
+  const pivotData: PivotData = data;
+  const showRowTotals = (showRowTotalsFromProps ?? showRowTotalsProp ?? true) as boolean;
+  const showColumnTotals = (showColumnTotalsFromProps ?? showColumnTotalsProp ?? true) as boolean;
 
-  const defaultExpanded = useMemo(() => {
-    return new Set((rowHierarchy || []).filter((n: any) => n.children?.length).map((n: any) => n.path));
-  }, [rowHierarchy]);
+  const effectiveShowRowTotals = showGrandTotals && showRowTotals;
+  const effectiveShowColumnTotals = showGrandTotals && showColumnTotals;
 
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[myfirst pivot] totals flags effective', {
+      showGrandTotals,
+      showRowTotalsFromProps,
+      showColumnTotalsFromProps,
+      showRowTotalsProp,
+      showColumnTotalsProp,
+      effective: { effectiveShowRowTotals, effectiveShowColumnTotals },
+    });
+  }, [
+    showGrandTotals,
+    showRowTotalsFromProps,
+    showColumnTotalsFromProps,
+    showRowTotalsProp,
+    showColumnTotalsProp,
+    effectiveShowRowTotals,
+    effectiveShowColumnTotals,
+  ]);
 
-  if (!data?.rows?.length || !metrics.length) {
+  const rowHierarchy = useMemo<TreeNode[]>(() => {
+    if (pivotData?.rowHierarchy?.length) return pivotData.rowHierarchy;
+    if (pivotData?.rows?.length) return buildRowHierarchyFromRows(pivotData.rows);
+    return [];
+  }, [pivotData]);
+
+  const defaultExpanded = useMemo(
+    () => new Set(rowHierarchy.filter(n => n.children?.length).map(n => n.path)),
+    [rowHierarchy],
+  );
+
+  const [expanded, setExpanded] = useState<Set<string>>(defaultExpanded);
+
+  if (!pivotData?.rows?.length || !metrics.length) {
     return (
       <div style={{ height, width, padding: 20, textAlign: 'center' }}>
         <h3>Pivot Table</h3>
@@ -119,7 +255,10 @@ export default function SupersetPluginChartMyfirst(props: any) {
   const formatValue = (value: any) => {
     if (value === null || value === undefined) return '—';
     if (typeof value === 'number') {
-      return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return value.toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
     }
     return String(value);
   };
@@ -133,7 +272,6 @@ export default function SupersetPluginChartMyfirst(props: any) {
     });
   };
 
-  // precompute subtotal aggregates per node
   const nodeAggMap = useMemo(() => {
     const map = new Map<string, NodeAgg>();
 
@@ -150,39 +288,39 @@ export default function SupersetPluginChartMyfirst(props: any) {
       });
     };
 
-    const computeNodeAgg = (node: any): NodeAgg => {
+    const computeNodeAgg = (node: TreeNode): NodeAgg => {
       if (map.has(node.path)) return map.get(node.path)!;
       const agg: NodeAgg = {};
 
       if (node.isLeaf && node.key) {
-        data.cols.forEach((col: any) => {
+        pivotData.cols.forEach(col => {
           const cellKey = `${node.key}||${col.key}`;
           metrics.forEach((metric: string) => {
-            const v = data.values[cellKey]?.[metric] || 0;
+            const v = pivotData.values[cellKey]?.[metric] || 0;
             addToAgg(agg, col.key, metric, v);
           });
         });
       } else if (node.children?.length) {
-        node.children.forEach((child: any) => mergeAgg(agg, computeNodeAgg(child)));
+        node.children.forEach(child => mergeAgg(agg, computeNodeAgg(child)));
       }
 
       map.set(node.path, agg);
       return agg;
     };
 
-    (rowHierarchy || []).forEach((n: any) => computeNodeAgg(n));
+    rowHierarchy.forEach(n => computeNodeAgg(n));
     return map;
-  }, [rowHierarchy, data, metrics]);
+  }, [rowHierarchy, pivotData, metrics]);
 
-  const getNodeAggValue = (node: any, colKey: string, metric: string) => {
+  const getNodeAggValue = (node: TreeNode, colKey: string, metric: string) => {
     const agg = nodeAggMap.get(node.path);
     return agg?.[colKey]?.[metric] ?? null;
   };
 
-  // total по строке (узлу) — для правого Total column
-  const getNodeRowTotal = (node: any) => {
+  const getNodeTotal = (node: TreeNode) => {
     const agg = nodeAggMap.get(node.path);
     if (!agg) return 0;
+
     let total = 0;
     Object.keys(agg).forEach(colKey => {
       metrics.forEach((metric: string) => {
@@ -192,33 +330,30 @@ export default function SupersetPluginChartMyfirst(props: any) {
     return total;
   };
 
-  // total по колонке — для нижней строки Grand Total
-  const calculateColTotal = (col: any) => {
+  const calculateColTotal = (col: PivotCol, metric: string) => {
     let total = 0;
-    data.rows.forEach((row: any) => {
+    pivotData.rows.forEach(row => {
       const cellKey = `${row.key}||${col.key}`;
-      metrics.forEach((metric: string) => {
-        total += data.values[cellKey]?.[metric] || 0;
-      });
+      total += pivotData.values[cellKey]?.[metric] || 0;
     });
     return total;
   };
 
   const calculateGrandTotal = () => {
     let total = 0;
-    data.rows.forEach((row: any) => {
-      data.cols.forEach((col: any) => {
+    pivotData.rows.forEach(row => {
+      pivotData.cols.forEach(col => {
         const cellKey = `${row.key}||${col.key}`;
         metrics.forEach((metric: string) => {
-          total += data.values[cellKey]?.[metric] || 0;
+          total += pivotData.values[cellKey]?.[metric] || 0;
         });
       });
     });
     return total;
   };
 
-  const renderRows = (nodes: any[], level = 0) => {
-    let result: any[] = [];
+  const renderRows = (nodes: TreeNode[], level = 0): React.ReactNode[] => {
+    let result: React.ReactNode[] = [];
 
     nodes.forEach(node => {
       const hasChildren = !!node.children?.length;
@@ -233,14 +368,14 @@ export default function SupersetPluginChartMyfirst(props: any) {
             {node.name}
           </td>
 
-          {data.cols.map((col: any) => (
+          {pivotData.cols.map(col => (
             <React.Fragment key={col.key}>
               {metrics.map((metric: string) => {
                 let value = null;
 
                 if (node.isLeaf && node.key) {
                   const cellKey = `${node.key}||${col.key}`;
-                  value = data.values[cellKey]?.[metric];
+                  value = pivotData.values[cellKey]?.[metric];
                 } else if (isSubtotalRow) {
                   value = getNodeAggValue(node, col.key, metric);
                 }
@@ -254,27 +389,25 @@ export default function SupersetPluginChartMyfirst(props: any) {
             </React.Fragment>
           ))}
 
-          {showRowTotals && (
+          {effectiveShowRowTotals && (
             <td className="metric-value">
-              {formatValue(node.isLeaf || isSubtotalRow ? getNodeRowTotal(node) : null)}
+              {formatValue(getNodeTotal(node))}
             </td>
           )}
-        </tr>
+        </tr>,
       );
 
       if (hasChildren && isExpandedNow) {
-        result = result.concat(renderRows(node.children, level + 1));
+        result = result.concat(renderRows(node.children!, level + 1));
       }
     });
 
     return result;
   };
 
-  const pad = compactDisplay ? '8px' : '16px';
-
   return (
     <Styles
-      style={{ height, width, padding: pad }}
+      style={{ height, width, padding: compactDisplay ? '8px' : '16px' }}
       headerBg={headerBg}
       headerTextColor={headerTextColor}
       grandTotalBg={grandTotalBg}
@@ -287,46 +420,46 @@ export default function SupersetPluginChartMyfirst(props: any) {
             <tr>
               <th>{rows.length ? rows.join(' → ') : 'Rows'}</th>
 
-              {data.cols.map((col: any) => (
+              {pivotData.cols.map(col => (
                 <th key={col.key} colSpan={metrics.length}>
                   {columns.length ? (col.values?.join(' → ') || '—') : ' '}
                 </th>
               ))}
 
-              {showRowTotals && <th>Total</th>}
+              {effectiveShowRowTotals && <th>Total</th>}
             </tr>
 
             <tr>
               <th />
-              {data.cols.map((col: any) => (
+              {pivotData.cols.map(col => (
                 <React.Fragment key={col.key}>
                   {metrics.map((metric: string) => (
                     <th key={`${col.key}-${metric}`}>{metric}</th>
                   ))}
                 </React.Fragment>
               ))}
-              {showRowTotals && <th />}
+              {effectiveShowRowTotals && <th />}
             </tr>
           </thead>
 
           <tbody>
             {renderRows(rowHierarchy)}
 
-            {showColumnTotals && (
+            {effectiveShowColumnTotals && (
               <tr className="total-row">
                 <td><strong>Grand Total</strong></td>
 
-                {data.cols.map((col: any) => (
+                {pivotData.cols.map(col => (
                   <React.Fragment key={col.key}>
                     {metrics.map((metric: string) => (
                       <td key={`${col.key}-${metric}`} className="metric-value">
-                        <strong>{formatValue(calculateColTotal(col))}</strong>
+                        <strong>{formatValue(calculateColTotal(col, metric))}</strong>
                       </td>
                     ))}
                   </React.Fragment>
                 ))}
 
-                {showRowTotals && (
+                {effectiveShowRowTotals && (
                   <td className="metric-value">
                     <strong>{formatValue(calculateGrandTotal())}</strong>
                   </td>

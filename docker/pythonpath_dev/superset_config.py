@@ -105,7 +105,7 @@ FEATURE_FLAGS = {
     "ALERT_REPORTS": True,
     "GLOBAL_ASYNC_QUERIES": True,  # Включаем глобальные асинхронные запросы
 }
-
+SECRET_KEY="1/jjJapIBB50P/JzfLdLcvt5/CU8G55tuDDblRHXAUEjdL2Ep74lJ6GQ"
 # Транспорт для асинхронных запросов (используем WebSocket)
 GLOBAL_ASYNC_QUERIES_TRANSPORT = "ws"
 GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL = "ws://localhost/ws"

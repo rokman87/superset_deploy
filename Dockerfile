@@ -1,20 +1,3 @@
-#
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
 ######################################################################
 # Node stage to deal with static asset construction
 ######################################################################
@@ -45,10 +28,11 @@ ENV NODE_OPTIONS="--max_old_space_size=6144"
 COPY docker/ /app/docker/
 ARG NPM_BUILD_CMD="build"
 
-RUN /app/docker/apt-install.sh build-essential python3 zstd git ca-certificates
+RUN /app/docker/apt-install.sh build-essential python3 zstd git ca-certificates chromium
 
 ENV BUILD_CMD=${NPM_BUILD_CMD} \
-    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 RUN /app/docker/frontend-mem-nag.sh
 
@@ -120,8 +104,12 @@ RUN useradd --user-group -d ${SUPERSET_HOME} -m --no-log-init --shell /bin/bash 
 # Some bash scripts needed throughout the layers
 COPY --chmod=755 docker/*.sh /app/docker/
 
-RUN pip install --no-cache-dir --upgrade uv
-
+RUN python -m pip install --no-cache-dir --default-timeout=300 --retries 20 --upgrade uv
+ENV UV_HTTP_TIMEOUT=300
+ENV UV_HTTP_CONNECT_TIMEOUT=60
+ENV UV_HTTP_RETRIES=20
+ENV UV_CONCURRENT_DOWNLOADS=2
+ENV UV_NATIVE_TLS=true
 # Using uv as it's faster/simpler than pip
 RUN uv venv /app/.venv
 ENV PATH="/app/.venv/bin:${PATH}"
@@ -137,7 +125,13 @@ ENV BUILD_TRANSLATIONS=${BUILD_TRANSLATIONS}
 # Install Python dependencies using docker/pip-install.sh
 COPY requirements/translations.txt requirements/
 RUN --mount=type=cache,target=/root/.cache/uv \
-    . /app/.venv/bin/activate && /app/docker/pip-install.sh --requires-build-essential -r requirements/translations.txt
+    . /app/.venv/bin/activate && \
+    UV_HTTP_TIMEOUT=300 \
+    UV_HTTP_CONNECT_TIMEOUT=60 \
+    UV_HTTP_RETRIES=20 \
+    UV_CONCURRENT_DOWNLOADS=2 \
+    UV_NATIVE_TLS=true \
+    /app/docker/pip-install.sh --requires-build-essential -r requirements/translations.txt
 
 COPY superset/translations/ /app/translations_mo/
 RUN if [ "$BUILD_TRANSLATIONS" = "true" ]; then \
@@ -200,7 +194,8 @@ RUN /app/docker/apt-install.sh \
       libsasl2-modules-gssapi-mit \
       libpq-dev \
       libecpg-dev \
-      libldap2-dev
+      libldap2-dev \
+      chromium
 
 # Copy compiled things from previous stages
 COPY --from=superset-node /app/superset/static/assets superset/static/assets

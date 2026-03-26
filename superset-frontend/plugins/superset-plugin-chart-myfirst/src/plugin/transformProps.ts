@@ -8,6 +8,14 @@ type RowNode = {
   children?: RowNode[];
 };
 
+type InternalRowNode = {
+  name: string;
+  path: string;
+  isLeaf: boolean;
+  key?: string;
+  children: Map<string, InternalRowNode>;
+};
+
 export default function transformProps(chartProps: ChartProps) {
   const { width, height, formData, queriesData } = chartProps;
 
@@ -16,13 +24,19 @@ export default function transformProps(chartProps: ChartProps) {
   const groupbyRows: string[] = Array.isArray((formData as any).groupbyRows)
     ? (formData as any).groupbyRows
     : typeof (formData as any).groupbyRows === 'string'
-      ? (formData as any).groupbyRows.split(',').map((s: string) => s.trim()).filter(Boolean)
+      ? (formData as any).groupbyRows
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       : [];
 
   const groupbyColumns: string[] = Array.isArray((formData as any).groupbyColumns)
     ? (formData as any).groupbyColumns
     : typeof (formData as any).groupbyColumns === 'string'
-      ? (formData as any).groupbyColumns.split(',').map((s: string) => s.trim()).filter(Boolean)
+      ? (formData as any).groupbyColumns
+          .split(',')
+          .map((s: string) => s.trim())
+          .filter(Boolean)
       : [];
 
   const metricsRaw = (formData as any).metrics || [];
@@ -30,14 +44,11 @@ export default function transformProps(chartProps: ChartProps) {
     .filter(Boolean)
     .map((m: any) => (typeof m === 'string' ? m : getMetricLabel(m)));
 
-  // -------- totals flags (FIX) --------
-  // читаем НОВЫЕ camelCase
   const enableTotalsCamel = (formData as any).enableTotals;
   const showRowTotalsCamel = (formData as any).showRowTotals;
   const showColumnTotalsCamel = (formData as any).showColumnTotals;
 
-  // fallback на старые snake_case (если где-то остались)
-  const enableTotalsSnake = (formData as any).show_grand_totals; // старый master
+  const enableTotalsSnake = (formData as any).show_grand_totals;
   const showRowTotalsSnake = (formData as any).show_row_totals;
   const showColumnTotalsSnake = (formData as any).show_column_totals;
 
@@ -101,7 +112,12 @@ export default function transformProps(chartProps: ChartProps) {
   };
 }
 
-function buildPivotData(data: any[], rowFields: string[], colFields: string[], metrics: string[]) {
+function buildPivotData(
+  data: any[],
+  rowFields: string[],
+  colFields: string[],
+  metrics: string[],
+) {
   const rows = new Map<string, { key: string; values: string[] }>();
   const cols = new Map<string, { key: string; values: string[] }>();
   const values: Record<string, Record<string, number>> = {};
@@ -113,7 +129,7 @@ function buildPivotData(data: any[], rowFields: string[], colFields: string[], m
     const rowValues = rowFields.map(f => norm(item[f]));
     if (!rows.has(rowKey)) rows.set(rowKey, { key: rowKey, values: rowValues });
 
-    const colKey = colFields.map(f => norm(item[f])).join('|'); // если colFields пустые => ''
+    const colKey = colFields.map(f => norm(item[f])).join('|');
     const colValues = colFields.map(f => norm(item[f]));
     if (!cols.has(colKey)) cols.set(colKey, { key: colKey, values: colValues });
 
@@ -140,39 +156,43 @@ function buildPivotData(data: any[], rowFields: string[], colFields: string[], m
 }
 
 function buildRowHierarchy(rowsArray: { key: string; values: string[] }[]): RowNode[] {
-  const root: { children: Map<string, any> } = { children: new Map() };
+  const root: { children: Map<string, InternalRowNode> } = {
+    children: new Map<string, InternalRowNode>(),
+  };
 
   rowsArray.forEach(r => {
-    let cur = root;
+    let curChildren = root.children;
     const pathParts: string[] = [];
 
     r.values.forEach((val, i) => {
       pathParts.push(val);
       const path = pathParts.join(' → ');
 
-      if (!cur.children.has(val)) {
-        cur.children.set(val, {
+      if (!curChildren.has(val)) {
+        curChildren.set(val, {
           name: val,
           path,
-          children: new Map(),
+          children: new Map<string, InternalRowNode>(),
           isLeaf: false,
           key: undefined,
         });
       }
 
-      cur = cur.children.get(val);
+      const node = curChildren.get(val)!;
 
       if (i === r.values.length - 1) {
-        cur.isLeaf = true;
-        cur.key = r.key;
+        node.isLeaf = true;
+        node.key = r.key;
       }
+
+      curChildren = node.children;
     });
   });
 
-  const mapToNodes = (m: Map<string, any>): RowNode[] =>
+  const mapToNodes = (m: Map<string, InternalRowNode>): RowNode[] =>
     Array.from(m.values())
       .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .map(n => {
+      .map((n): RowNode => {
         const children = mapToNodes(n.children);
         return {
           name: n.name,
