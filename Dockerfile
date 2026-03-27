@@ -1,45 +1,44 @@
+# syntax=docker/dockerfile:1.7
+
 ######################################################################
-# Node stage to deal with static asset construction
+# Common build args
 ######################################################################
 ARG PY_VER=3.11.13-slim-bookworm
-
-# If BUILDPLATFORM is null, set it to 'amd64' (or leave as is otherwise).
-ARG BUILDPLATFORM=${BUILDPLATFORM:-amd64}
-
-# Include translations in the final build
-ARG BUILD_TRANSLATIONS="false"
+ARG BUILDPLATFORM=linux/amd64
+ARG BUILD_TRANSLATIONS=false
 
 ######################################################################
-# superset-node-ci used as a base for building frontend assets and CI
-######################################################################
-######################################################################
-# superset-node-ci used as a base for building frontend assets and CI
-######################################################################
-######################################################################
-# superset-node-ci used as a base for building frontend assets and CI
+# Node stage to build frontend assets
 ######################################################################
 FROM --platform=${BUILDPLATFORM} node:20-bookworm-slim AS superset-node-ci
+
 ARG BUILD_TRANSLATIONS
+ARG DEV_MODE=false
+ARG NPM_BUILD_CMD=build
+
 ENV BUILD_TRANSLATIONS=${BUILD_TRANSLATIONS}
-ARG DEV_MODE="false"
 ENV DEV_MODE=${DEV_MODE}
 ENV NPM_CONFIG_LEGACY_PEER_DEPS=true
-ENV NODE_OPTIONS="--max_old_space_size=6144"
+ENV NODE_OPTIONS=--max_old_space_size=6144
+ENV BUILD_CMD=${NPM_BUILD_CMD}
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 COPY docker/ /app/docker/
-ARG NPM_BUILD_CMD="build"
 
-RUN /app/docker/apt-install.sh build-essential python3 zstd git ca-certificates chromium
-
-ENV BUILD_CMD=${NPM_BUILD_CMD} \
-    PUPPETEER_SKIP_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+RUN /app/docker/apt-install.sh \
+    build-essential \
+    python3 \
+    zstd \
+    git \
+    ca-certificates \
+    chromium
 
 RUN /app/docker/frontend-mem-nag.sh
 
 WORKDIR /app/superset-frontend
 
-RUN mkdir -p /app/superset/static/assets \
-             /app/superset/translations
+RUN mkdir -p /app/superset/static/assets /app/superset/translations
 
 COPY superset-frontend /app/superset-frontend
 
@@ -62,14 +61,13 @@ RUN --mount=type=cache,target=/root/.cache \
     fi
 
 ######################################################################
-# superset-node is used for compiling frontend assets
-######################################################################
-######################################################################
-# superset-node is used for compiling frontend assets
+# Frontend build stage
 ######################################################################
 FROM superset-node-ci AS superset-node
 
-ENV NODE_OPTIONS="--max_old_space_size=12288"
+ARG DEV_MODE=false
+ENV DEV_MODE=${DEV_MODE}
+ENV NODE_OPTIONS=--max_old_space_size=12288
 
 RUN --mount=type=cache,target=/root/.npm \
     if [ "$DEV_MODE" = "false" ]; then \
@@ -83,36 +81,36 @@ COPY superset/translations /app/superset/translations
 
 RUN if [ "$BUILD_TRANSLATIONS" = "true" ]; then \
         npm run build-translation; \
-    fi; \
-    rm -rf /app/superset/translations/*/*/*.po; \
-    rm -rf /app/superset/translations/*/*/*.mo;
-
+    fi && \
+    rm -rf /app/superset/translations/*/*/*.po && \
+    rm -rf /app/superset/translations/*/*/*.mo
 
 ######################################################################
 # Base python layer
 ######################################################################
 FROM python:${PY_VER} AS python-base
 
-ARG SUPERSET_HOME="/app/superset_home"
+ARG SUPERSET_HOME=/app/superset_home
+
 ENV SUPERSET_HOME=${SUPERSET_HOME}
+ENV PATH=/app/.venv/bin:${PATH}
 
-RUN mkdir -p $SUPERSET_HOME
+# More tolerant network settings for uv
+ENV UV_HTTP_TIMEOUT=120
+ENV UV_HTTP_RETRIES=10
+ENV UV_INDEX=https://pypi.org/simple
+
+RUN mkdir -p ${SUPERSET_HOME}
+
 RUN useradd --user-group -d ${SUPERSET_HOME} -m --no-log-init --shell /bin/bash superset \
-    && chmod -R 1777 $SUPERSET_HOME \
-    && chown -R superset:superset $SUPERSET_HOME
+    && chmod -R 1777 ${SUPERSET_HOME} \
+    && chown -R superset:superset ${SUPERSET_HOME}
 
-# Some bash scripts needed throughout the layers
 COPY --chmod=755 docker/*.sh /app/docker/
 
-RUN python -m pip install --no-cache-dir --default-timeout=300 --retries 20 --upgrade uv
-ENV UV_HTTP_TIMEOUT=300
-ENV UV_HTTP_CONNECT_TIMEOUT=60
-ENV UV_HTTP_RETRIES=20
-ENV UV_CONCURRENT_DOWNLOADS=2
-ENV UV_NATIVE_TLS=true
-# Using uv as it's faster/simpler than pip
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel uv
+
 RUN uv venv /app/.venv
-ENV PATH="/app/.venv/bin:${PATH}"
 
 ######################################################################
 # Python translation compiler layer
@@ -122,53 +120,47 @@ FROM python-base AS python-translation-compiler
 ARG BUILD_TRANSLATIONS
 ENV BUILD_TRANSLATIONS=${BUILD_TRANSLATIONS}
 
-# Install Python dependencies using docker/pip-install.sh
 COPY requirements/translations.txt requirements/
+
 RUN --mount=type=cache,target=/root/.cache/uv \
     . /app/.venv/bin/activate && \
-    UV_HTTP_TIMEOUT=300 \
-    UV_HTTP_CONNECT_TIMEOUT=60 \
-    UV_HTTP_RETRIES=20 \
-    UV_CONCURRENT_DOWNLOADS=2 \
-    UV_NATIVE_TLS=true \
     /app/docker/pip-install.sh --requires-build-essential -r requirements/translations.txt
 
 COPY superset/translations/ /app/translations_mo/
+
 RUN if [ "$BUILD_TRANSLATIONS" = "true" ]; then \
-        pybabel compile -d /app/translations_mo | true; \
-    fi; \
-    rm -f /app/translations_mo/*/*/*.po; \
-    rm -f /app/translations_mo/*/*/*.json;
+        pybabel compile -d /app/translations_mo || true; \
+    fi && \
+    rm -f /app/translations_mo/*/*/*.po && \
+    rm -f /app/translations_mo/*/*/*.json
 
 ######################################################################
-# Python APP common layer
+# Common Python app layer
 ######################################################################
 FROM python-base AS python-common
 
-ENV SUPERSET_HOME="/app/superset_home" \
-    HOME="/app/superset_home" \
-    SUPERSET_ENV="production" \
+ENV SUPERSET_HOME=/app/superset_home \
+    HOME=/app/superset_home \
+    SUPERSET_ENV=production \
     FLASK_APP="superset.app:create_app()" \
-    PYTHONPATH="/app/pythonpath" \
-    SUPERSET_PORT="8088"
+    PYTHONPATH=/app/pythonpath \
+    SUPERSET_PORT=8088
 
-# Copy the entrypoints, make them executable in userspace
 COPY --chmod=755 docker/entrypoints /app/docker/entrypoints
 
 WORKDIR /app
-# Set up necessary directories and user
+
 RUN mkdir -p \
       ${PYTHONPATH} \
       superset/static \
       requirements \
       superset-frontend \
       apache_superset.egg-info \
-      requirements \
     && touch superset/static/version_info.json
 
-# Install Playwright and optionally setup headless browsers
-ARG INCLUDE_CHROMIUM="false"
-ARG INCLUDE_FIREFOX="false"
+ARG INCLUDE_CHROMIUM=false
+ARG INCLUDE_FIREFOX=false
+
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
     if [ "$INCLUDE_CHROMIUM" = "true" ] || [ "$INCLUDE_FIREFOX" = "true" ]; then \
         uv pip install playwright && \
@@ -179,15 +171,12 @@ RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
         echo "Skipping browser installation"; \
     fi
 
-# Copy required files for Python build
 COPY pyproject.toml setup.py MANIFEST.in README.md ./
 COPY superset-frontend/package.json superset-frontend/
 COPY scripts/check-env.py scripts/
 
-# keeping for backward compatibility
 COPY --chmod=755 ./docker/entrypoints/run-server.sh /usr/bin/
 
-# Some debian libs
 RUN /app/docker/apt-install.sh \
       curl \
       libsasl2-dev \
@@ -197,15 +186,12 @@ RUN /app/docker/apt-install.sh \
       libldap2-dev \
       chromium
 
-# Copy compiled things from previous stages
 COPY --from=superset-node /app/superset/static/assets superset/static/assets
 
-# TODO, when the next version comes out, use --exclude superset/translations
 COPY superset superset
-# TODO in the meantime, remove the .po files
-RUN rm superset/translations/*/*/*.po
 
-# Merging translations from backend and frontend stages
+RUN rm -f superset/translations/*/*/*.po || true
+
 COPY --from=superset-node /app/superset/translations superset/translations
 COPY --from=python-translation-compiler /app/translations_mo superset/translations
 
@@ -214,51 +200,99 @@ CMD ["/app/docker/entrypoints/run-server.sh"]
 EXPOSE ${SUPERSET_PORT}
 
 ######################################################################
-# Final lean image...
+# Lean production image
 ######################################################################
 FROM python-common AS lean
 
-# Install Python dependencies using docker/pip-install.sh
 COPY requirements/base.txt requirements/
+
+# First try with uv, fallback to pip if network with uv is unstable
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt
-# Install the superset package
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      echo "Installing Python dependencies from requirements/base.txt"; \
+      if ! /app/docker/pip-install.sh --requires-build-essential -r requirements/base.txt; then \
+        echo "uv/pip-install.sh failed, falling back to plain pip"; \
+        apt-get update && apt-get install -y --no-install-recommends build-essential && \
+        python -m pip install --no-cache-dir -r requirements/base.txt && \
+        apt-get purge -y build-essential && \
+        apt-get autoremove -y && \
+        rm -rf /var/lib/apt/lists/*; \
+      fi'
+
 RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install -e .
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      if ! uv pip install -e .; then \
+        echo "uv editable install failed, falling back to pip editable install"; \
+        python -m pip install --no-cache-dir -e .; \
+      fi'
+
 RUN python -m compileall /app/superset
 
 USER superset
 
 ######################################################################
-# Dev image...
+# Dev image
 ######################################################################
 FROM python-common AS dev
 
-# Debian libs needed for dev
 RUN /app/docker/apt-install.sh \
     git \
     pkg-config \
     default-libmysqlclient-dev
 
-# Copy development requirements and install them
 COPY requirements/*.txt requirements/
-# Install Python dependencies using docker/pip-install.sh
-RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    /app/docker/pip-install.sh --requires-build-essential -r requirements/development.txt
-# Install the superset package
-RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
-    uv pip install -e .
 
-RUN uv pip install .[postgres]
+RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      if ! /app/docker/pip-install.sh --requires-build-essential -r requirements/development.txt; then \
+        echo "uv/pip-install.sh failed, falling back to plain pip"; \
+        apt-get update && apt-get install -y --no-install-recommends build-essential && \
+        python -m pip install --no-cache-dir -r requirements/development.txt && \
+        apt-get purge -y build-essential && \
+        apt-get autoremove -y && \
+        rm -rf /var/lib/apt/lists/*; \
+      fi'
+
+RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      if ! uv pip install -e .; then \
+        python -m pip install --no-cache-dir -e .; \
+      fi'
+
+RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      if ! uv pip install .[postgres]; then \
+        python -m pip install --no-cache-dir ".[postgres]"; \
+      fi'
+
 RUN python -m compileall /app/superset
 
 USER superset
 
 ######################################################################
-# CI image...
+# CI image
 ######################################################################
 FROM lean AS ci
+
 USER root
-RUN uv pip install .[postgres]
+
+RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
+    --mount=type=cache,target=/root/.cache/pip \
+    bash -lc '\
+      set -e; \
+      if ! uv pip install .[postgres]; then \
+        python -m pip install --no-cache-dir ".[postgres]"; \
+      fi'
+
 USER superset
 CMD ["/app/docker/entrypoints/docker-ci.sh"]
