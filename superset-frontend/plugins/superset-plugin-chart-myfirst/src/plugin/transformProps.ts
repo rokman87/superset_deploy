@@ -1,48 +1,47 @@
 import { ChartProps, getMetricLabel } from '@superset-ui/core';
 
-type RowNode = {
-  name: string;
-  path: string;
-  isLeaf: boolean;
-  key?: string;
-  children?: RowNode[];
-};
+function parseArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean).map(String);
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map(item => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
 
-type InternalRowNode = {
-  name: string;
-  path: string;
-  isLeaf: boolean;
-  key?: string;
-  children: Map<string, InternalRowNode>;
-};
+function parseBoolean(value: unknown, defaultValue = true): boolean {
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['false', '0', 'off', 'no', 'null', 'undefined', ''].includes(normalized)) {
+      return false;
+    }
+    if (['true', '1', 'on', 'yes'].includes(normalized)) {
+      return true;
+    }
+  }
+  return Boolean(value);
+}
 
 export default function transformProps(chartProps: ChartProps) {
   const { width, height, formData, queriesData } = chartProps;
+  const rawRecords = queriesData[0]?.data || [];
 
-  const data = queriesData[0]?.data || [];
-
-  const groupbyRows: string[] = Array.isArray((formData as any).groupbyRows)
-    ? (formData as any).groupbyRows
-    : typeof (formData as any).groupbyRows === 'string'
-      ? (formData as any).groupbyRows
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter(Boolean)
-      : [];
-
-  const groupbyColumns: string[] = Array.isArray((formData as any).groupbyColumns)
-    ? (formData as any).groupbyColumns
-    : typeof (formData as any).groupbyColumns === 'string'
-      ? (formData as any).groupbyColumns
-          .split(',')
-          .map((s: string) => s.trim())
-          .filter(Boolean)
-      : [];
+  const groupbyRows = parseArray((formData as any).groupbyRows);
+  const groupbyColumns = parseArray((formData as any).groupbyColumns);
+  const selectableDimensionsRaw = parseArray((formData as any).selectableDimensions);
+  const selectableDimensions = Array.from(
+    new Set([...selectableDimensionsRaw, ...groupbyRows, ...groupbyColumns]),
+  );
 
   const metricsRaw = (formData as any).metrics || [];
   const metrics: string[] = (Array.isArray(metricsRaw) ? metricsRaw : [metricsRaw])
     .filter(Boolean)
-    .map((m: any) => (typeof m === 'string' ? m : getMetricLabel(m)));
+    .map((metric: any) => (typeof metric === 'string' ? metric : getMetricLabel(metric)));
 
   const enableTotalsCamel = (formData as any).enableTotals;
   const showRowTotalsCamel = (formData as any).showRowTotals;
@@ -52,156 +51,51 @@ export default function transformProps(chartProps: ChartProps) {
   const showRowTotalsSnake = (formData as any).show_row_totals;
   const showColumnTotalsSnake = (formData as any).show_column_totals;
 
-  const enableTotals =
+  const showGrandTotals =
     enableTotalsCamel !== undefined
-      ? enableTotalsCamel !== false
+      ? parseBoolean(enableTotalsCamel, true)
       : enableTotalsSnake !== undefined
-        ? enableTotalsSnake !== false
+        ? parseBoolean(enableTotalsSnake, true)
         : true;
 
   const showRowTotals =
-    enableTotals &&
+    showGrandTotals &&
     (showRowTotalsCamel !== undefined
-      ? showRowTotalsCamel !== false
+      ? parseBoolean(showRowTotalsCamel, true)
       : showRowTotalsSnake !== undefined
-        ? showRowTotalsSnake !== false
+        ? parseBoolean(showRowTotalsSnake, true)
         : true);
 
   const showColumnTotals =
-    enableTotals &&
+    showGrandTotals &&
     (showColumnTotalsCamel !== undefined
-      ? showColumnTotalsCamel !== false
+      ? parseBoolean(showColumnTotalsCamel, true)
       : showColumnTotalsSnake !== undefined
-        ? showColumnTotalsSnake !== false
+        ? parseBoolean(showColumnTotalsSnake, true)
         : true);
-
-  const showSubtotals = (formData as any).show_subtotals !== false;
-  const showCellBars = (formData as any).show_cell_bars !== false;
-  const compactDisplay = !!(formData as any).compact_display;
-
-  if (!groupbyRows.length || !metrics.length) {
-    return {
-      width,
-      height,
-      data: { rows: [], cols: [], values: {}, rowHierarchy: [] },
-      rows: groupbyRows,
-      columns: groupbyColumns,
-      metrics,
-      showSubtotals,
-      showRowTotals,
-      showColumnTotals,
-      showCellBars,
-      compactDisplay,
-    };
-  }
-
-  const pivotData = buildPivotData(data, groupbyRows, groupbyColumns, metrics);
 
   return {
     width,
     height,
-    data: pivotData,
+    data: rawRecords,
     rows: groupbyRows,
     columns: groupbyColumns,
     metrics,
-    showSubtotals,
+    selectableDimensions,
+
+    // Важно: прокидываем и camelCase, и snake_case для надёжности
+    showSidebar: parseBoolean((formData as any).show_sidebar, true),
+    show_sidebar: parseBoolean((formData as any).show_sidebar, true),
+
+    showSubtotals: parseBoolean((formData as any).show_subtotals, true),
+    showGrandTotals,
     showRowTotals,
     showColumnTotals,
-    showCellBars,
-    compactDisplay,
+    showCellBars: parseBoolean((formData as any).show_cell_bars, true),
+    showHeatmap: parseBoolean((formData as any).show_heatmap, true),
+    compactDisplay: parseBoolean((formData as any).compact_display, false),
+    defaultExpandDepth: Number((formData as any).default_expand_depth ?? 0),
+    numberFormatDigits: Number((formData as any).number_format_digits ?? 2),
+    nullLabel: String((formData as any).null_label || '—'),
   };
-}
-
-function buildPivotData(
-  data: any[],
-  rowFields: string[],
-  colFields: string[],
-  metrics: string[],
-) {
-  const rows = new Map<string, { key: string; values: string[] }>();
-  const cols = new Map<string, { key: string; values: string[] }>();
-  const values: Record<string, Record<string, number>> = {};
-
-  const norm = (v: any) => (v === null || v === undefined ? 'NULL' : String(v));
-
-  data.forEach(item => {
-    const rowKey = rowFields.map(f => norm(item[f])).join('|');
-    const rowValues = rowFields.map(f => norm(item[f]));
-    if (!rows.has(rowKey)) rows.set(rowKey, { key: rowKey, values: rowValues });
-
-    const colKey = colFields.map(f => norm(item[f])).join('|');
-    const colValues = colFields.map(f => norm(item[f]));
-    if (!cols.has(colKey)) cols.set(colKey, { key: colKey, values: colValues });
-
-    const cellKey = `${rowKey}||${colKey}`;
-    if (!values[cellKey]) values[cellKey] = {};
-
-    metrics.forEach(metricLabel => {
-      const v = item[metricLabel];
-      values[cellKey][metricLabel] =
-        typeof v === 'number' ? v : v === null || v === undefined ? 0 : Number(v) || 0;
-    });
-  });
-
-  const rowsArray = Array.from(rows.values()).sort((a, b) =>
-    a.values.join('').localeCompare(b.values.join('')),
-  );
-  const colsArray = Array.from(cols.values()).sort((a, b) =>
-    a.values.join('').localeCompare(b.values.join('')),
-  );
-
-  const rowHierarchy = buildRowHierarchy(rowsArray);
-
-  return { rows: rowsArray, cols: colsArray, values, rowHierarchy };
-}
-
-function buildRowHierarchy(rowsArray: { key: string; values: string[] }[]): RowNode[] {
-  const root: { children: Map<string, InternalRowNode> } = {
-    children: new Map<string, InternalRowNode>(),
-  };
-
-  rowsArray.forEach(r => {
-    let curChildren = root.children;
-    const pathParts: string[] = [];
-
-    r.values.forEach((val, i) => {
-      pathParts.push(val);
-      const path = pathParts.join(' → ');
-
-      if (!curChildren.has(val)) {
-        curChildren.set(val, {
-          name: val,
-          path,
-          children: new Map<string, InternalRowNode>(),
-          isLeaf: false,
-          key: undefined,
-        });
-      }
-
-      const node = curChildren.get(val)!;
-
-      if (i === r.values.length - 1) {
-        node.isLeaf = true;
-        node.key = r.key;
-      }
-
-      curChildren = node.children;
-    });
-  });
-
-  const mapToNodes = (m: Map<string, InternalRowNode>): RowNode[] =>
-    Array.from(m.values())
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .map((n): RowNode => {
-        const children = mapToNodes(n.children);
-        return {
-          name: n.name,
-          path: n.path,
-          isLeaf: n.isLeaf,
-          key: n.key,
-          children: children.length ? children : undefined,
-        };
-      });
-
-  return mapToNodes(root.children);
 }

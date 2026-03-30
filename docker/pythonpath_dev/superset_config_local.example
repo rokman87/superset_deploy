@@ -22,6 +22,6 @@
 # It ends up being imported by docker/superset_config.py which is loaded by
 # superset/config.py
 #
-
+SECRET_KEY="lJnVzyWI4saSVawWX8TV/bVqReMTPXdR+U2SR4x6/L7Q1h+XQcUJok0a"
 SQLALCHEMY_DATABASE_URI = "postgresql+psycopg2://pguser:pgpwd@some.host/superset"
 SQLALCHEMY_ECHO = True

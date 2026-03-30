@@ -4,7 +4,7 @@ import { ControlPanelConfig, sharedControls } from '@superset-ui/chart-controls'
 const config: ControlPanelConfig = {
   controlPanelSections: [
     {
-      label: t('Query'),
+      label: t('Запрос'),
       expanded: true,
       controlSetRows: [
         [
@@ -12,8 +12,8 @@ const config: ControlPanelConfig = {
             name: 'groupbyRows',
             config: {
               ...sharedControls.groupby,
-              label: t('Rows'),
-              description: t('Columns to group by on the rows'),
+              label: t('Строки по умолчанию'),
+              description: t('Начальная иерархия строк'),
             },
           },
         ],
@@ -22,8 +22,18 @@ const config: ControlPanelConfig = {
             name: 'groupbyColumns',
             config: {
               ...sharedControls.groupby,
-              label: t('Columns'),
-              description: t('Columns to group by on the columns'),
+              label: t('Столбцы по умолчанию'),
+              description: t('Начальная иерархия столбцов'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'selectableDimensions',
+            config: {
+              ...sharedControls.groupby,
+              label: t('Доступные измерения'),
+              description: t('Поля, доступные внутри чарта для строк, столбцов и фильтров'),
             },
           },
         ],
@@ -33,6 +43,7 @@ const config: ControlPanelConfig = {
             config: {
               ...sharedControls.metrics,
               validators: [validateNonEmpty],
+              label: t('Метрики'),
             },
           },
         ],
@@ -41,56 +52,58 @@ const config: ControlPanelConfig = {
       ],
     },
     {
-      label: t('Options'),
+      label: t('Настройки'),
       expanded: true,
       controlSetRows: [
+        [
+          {
+            name: 'show_sidebar',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Показывать левую панель'),
+              description: t('Показывать встроенную левую панель управления внутри чарта'),
+              default: true,
+              renderTrigger: true,
+            },
+          },
+        ],
         [
           {
             name: 'show_subtotals',
             config: {
               type: 'CheckboxControl',
-              label: t('Show subtotals'),
+              label: t('Показывать подытоги'),
               default: true,
               renderTrigger: true,
             },
           },
-        ],
-        [
           {
-            // MASTER switch
             name: 'enableTotals',
             config: {
               type: 'CheckboxControl',
-              label: t('Enable totals'),
+              label: t('Показывать итоги'),
               default: true,
               renderTrigger: true,
-              description: t('Master switch for totals'),
             },
           },
         ],
         [
           {
-            // RIGHT total column
             name: 'showRowTotals',
             config: {
               type: 'CheckboxControl',
-              label: t('Show row totals'),
+              label: t('Итоги по строкам'),
               default: true,
               renderTrigger: true,
-              description: t('Show Total column on the right'),
             },
           },
-        ],
-        [
           {
-            // BOTTOM grand total row
             name: 'showColumnTotals',
             config: {
               type: 'CheckboxControl',
-              label: t('Show column totals'),
+              label: t('Итоги по столбцам'),
               default: true,
               renderTrigger: true,
-              description: t('Show Grand Total row at the bottom'),
             },
           },
         ],
@@ -99,7 +112,16 @@ const config: ControlPanelConfig = {
             name: 'show_cell_bars',
             config: {
               type: 'CheckboxControl',
-              label: t('Show cell bars'),
+              label: t('Полосы в ячейках'),
+              default: true,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'show_heatmap',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Тепловая карта'),
               default: true,
               renderTrigger: true,
             },
@@ -110,8 +132,47 @@ const config: ControlPanelConfig = {
             name: 'compact_display',
             config: {
               type: 'CheckboxControl',
-              label: t('Compact display'),
+              label: t('Компактный режим'),
               default: false,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'default_expand_depth',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Глубина раскрытия'),
+              default: 0,
+              renderTrigger: true,
+              choices: [
+                [0, t('Все свернуто')],
+                [1, t('Уровень 1')],
+                [2, t('Уровень 2')],
+                [3, t('Уровень 3')],
+                [99, t('Развернуть всё')],
+              ],
+            },
+          },
+        ],
+        [
+          {
+            name: 'number_format_digits',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Знаков после запятой'),
+              default: 2,
+              renderTrigger: true,
+              choices: [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']],
+            },
+          },
+          {
+            name: 'null_label',
+            config: {
+              type: 'TextControl',
+              label: t('Текст для пустых значений'),
+              default: '—',
               renderTrigger: true,
             },
           },

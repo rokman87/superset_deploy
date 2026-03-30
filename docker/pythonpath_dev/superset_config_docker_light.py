@@ -20,7 +20,7 @@
 # Import all settings from the main config first
 from flask_caching.backends.filesystemcache import FileSystemCache
 from superset_config import *  # noqa: F403
-
+SECRET_KEY="lJnVzyWI4saSVawWX8TV/bVqReMTPXdR+U2SR4x6/L7Q1h+XQcUJok0a"
 # Override caching to use simple in-memory cache instead of Redis
 RESULTS_BACKEND = FileSystemCache("/app/superset_home/sqllab")
 
