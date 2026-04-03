@@ -14,7 +14,9 @@ export default function buildQuery(formData: QueryFormData) {
   const selectableDimensions = parseArray((formData as any).selectableDimensions);
   const metrics = (formData as any).metrics ?? [];
 
-  const columns = Array.from(new Set([...selectableDimensions, ...groupbyRows, ...groupbyColumns])).filter(Boolean);
+  const columns = Array.from(new Set([...selectableDimensions, ...groupbyRows, ...groupbyColumns]))
+    .filter(Boolean)
+    .map(col => (typeof col === 'object' ? col.value ?? col.label ?? JSON.stringify(col) : col));
 
   return buildQueryContext(formData, baseQueryObject => [
     {

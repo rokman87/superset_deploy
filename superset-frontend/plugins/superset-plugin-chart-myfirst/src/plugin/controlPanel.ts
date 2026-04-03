@@ -57,7 +57,7 @@ const config: ControlPanelConfig = {
       controlSetRows: [
         [
           {
-            name: 'show_sidebar',
+            name: 'myfirst_show_sidebar',
             config: {
               type: 'CheckboxControl',
               label: t('Показывать левую панель'),

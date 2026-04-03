@@ -455,3 +455,4 @@ xlsxwriter==3.0.9
 zstandard==0.23.0
     # via flask-compress
 clickhouse-connect
+python-ldap

@@ -56,6 +56,7 @@ type Props = {
   metrics?: string[];
   selectableDimensions?: string[];
   showSidebar?: boolean | string | number;
+  myfirstShowSidebar?: boolean | string | number;
   showSubtotals?: boolean;
   showGrandTotals?: boolean;
   showRowTotals?: boolean;
@@ -111,16 +112,18 @@ const Styles = styled.div<StyleProps>`
   }
 
   .sidebar {
-    width: ${SIDEBAR_WIDTH}px;
-    min-width: ${SIDEBAR_WIDTH}px;
-    max-width: ${SIDEBAR_WIDTH}px;
+    width: ${({ showSidebar }) => (showSidebar === false ? '0' : `${SIDEBAR_WIDTH}px`)};
+    min-width: ${({ showSidebar }) => (showSidebar === false ? '0' : `${SIDEBAR_WIDTH}px`)};
+    max-width: ${({ showSidebar }) => (showSidebar === false ? '0' : `${SIDEBAR_WIDTH}px`)};
     height: 100%;
     display: ${({ showSidebar }) => (showSidebar === false ? 'none' : 'flex')};
     flex-direction: column;
     background: rgba(255, 255, 255, 0.9);
-    border-right: 1px solid rgba(148, 163, 184, 0.22);
+    border-right: ${({ showSidebar }) =>
+      showSidebar === false ? 'none' : '1px solid rgba(148, 163, 184, 0.22)'};
     backdrop-filter: blur(14px);
     overflow: hidden;
+    flex: 0 0 auto;
   }
 
   .sidebar-header {
@@ -160,45 +163,6 @@ const Styles = styled.div<StyleProps>`
     height: 100%;
     display: flex;
     flex-direction: column;
-  }
-
-  .content-topbar {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-    padding: ${({ compactDisplay }) => (compactDisplay ? '10px 12px' : '12px 14px')};
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(255,255,255,0.82);
-    backdrop-filter: blur(12px);
-  }
-
-  .content-topbar-left {
-    min-width: 0;
-    display: grid;
-    gap: 8px;
-  }
-
-  .placement-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .placement-group {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .placement-label {
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: #64748b;
   }
 
   .chip {
@@ -625,7 +589,34 @@ const Styles = styled.div<StyleProps>`
 `;
 
 function normalizeValue(value: any, nullLabel: string) {
-  return value === null || value === undefined || value === '' ? nullLabel : String(value);
+  if (value === null || value === undefined || value === '') return nullLabel;
+  if (typeof value === 'object') {
+    if ('value' in value) return String(value.value);
+    if ('label' in value) return String(value.label);
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function toBoolean(value: unknown, defaultValue = true): boolean {
+  if (value === undefined || value === null) return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['false', '0', 'off', 'no', 'null', 'undefined', ''].includes(normalized)) return false;
+    if (['true', '1', 'on', 'yes'].includes(normalized)) return true;
+  }
+  return Boolean(value);
+}
+
+function arraysEqual(a: string[] = [], b: string[] = []) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function buildPivotData(
@@ -894,7 +885,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     columns = [],
     metrics = [],
     selectableDimensions = [],
-    showSidebar: rawShowSidebar = true,
+    showSidebar: rawShowSidebar,
+    myfirstShowSidebar: rawMyfirstShowSidebar,
     showSubtotals = true,
     showGrandTotals = true,
     showRowTotals = true,
@@ -913,28 +905,58 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     width,
   } = props;
 
-  const showSidebar =
-    rawShowSidebar === false ||
-    rawShowSidebar === 'false' ||
-    rawShowSidebar === 0 ||
-    rawShowSidebar === '0'
-      ? false
-      : true;
+  const resolvedShowSidebar = useMemo(() => {
+    if (rawMyfirstShowSidebar !== undefined) return toBoolean(rawMyfirstShowSidebar, true);
+    if (rawShowSidebar !== undefined) return toBoolean(rawShowSidebar, true);
+    return true;
+  }, [rawMyfirstShowSidebar, rawShowSidebar]);
 
   const availableDimensions = useMemo(
     () => Array.from(new Set([...(selectableDimensions || []), ...(rows || []), ...(columns || [])])),
     [selectableDimensions, rows, columns],
   );
 
-  const [rowFields, setRowFields] = useState<string[]>([]);
-  const [columnFields, setColumnFields] = useState<string[]>([]);
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  
+  const lastExternalRowsRef = useRef<string[]>(rows || []);
+  const lastExternalColumnsRef = useRef<string[]>(columns || []);
 
   useEffect(() => {
-    setRowFields(rows || []);
-    setColumnFields(columns || []);
-    setExpanded(new Set());
+    const nextRows = rows || [];
+    const nextColumns = columns || [];
+
+    const rowsChanged = !arraysEqual(lastExternalRowsRef.current, nextRows);
+    const columnsChanged = !arraysEqual(lastExternalColumnsRef.current, nextColumns);
+
+    if (rowsChanged || columnsChanged) {
+      setRowFields(nextRows);
+      setColumnFields(nextColumns);
+      setExpanded(new Set());
+      lastExternalRowsRef.current = [...nextRows];
+      lastExternalColumnsRef.current = [...nextColumns];
+    }
+  }, [rows, columns]);
+  const [rowFields, setRowFields] = useState<string[]>(rows || []);
+  const [columnFields, setColumnFields] = useState<string[]>(columns || []);
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // ✅ только один useRef для внешних rows/columns
+  const lastExternalRowsRef = useRef<string[]>(rows || []);
+  const lastExternalColumnsRef = useRef<string[]>(columns || []);
+
+  useEffect(() => {
+    const nextRows = rows || [];
+    const nextColumns = columns || [];
+
+    const rowsChanged = !arraysEqual(lastExternalRowsRef.current, nextRows);
+    const columnsChanged = !arraysEqual(lastExternalColumnsRef.current, nextColumns);
+
+    if (rowsChanged || columnsChanged) {
+      setRowFields(nextRows);
+      setColumnFields(nextColumns);
+      setExpanded(new Set());
+      lastExternalRowsRef.current = [...nextRows];
+      lastExternalColumnsRef.current = [...nextColumns];
+    }
   }, [rows, columns]);
 
   const dimensionValues = useMemo(() => {
@@ -1239,7 +1261,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
         grandTotalBg={grandTotalBg}
         expandColor={expandColor}
         compactDisplay={compactDisplay}
-        showSidebar={showSidebar}
+        showSidebar={resolvedShowSidebar}
       >
         <div className="empty">Выберите хотя бы одну метрику в настройках графика.</div>
       </Styles>
@@ -1254,10 +1276,20 @@ export default function SupersetPluginChartMyfirst(props: Props) {
       grandTotalBg={grandTotalBg}
       expandColor={expandColor}
       compactDisplay={compactDisplay}
-      showSidebar={showSidebar}
+      showSidebar={resolvedShowSidebar}
     >
       <div className="pivot-shell">
-        <div className="sidebar" style={{ display: showSidebar ? 'flex' : 'none' }}>
+        <div
+          className="sidebar"
+          style={{
+            display: resolvedShowSidebar ? 'flex' : 'none',
+            width: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
+            minWidth: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
+            maxWidth: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
+            borderRight: resolvedShowSidebar ? '1px solid rgba(148, 163, 184, 0.22)' : 'none',
+            overflow: 'hidden',
+          }}
+        >
           <div className="sidebar-header">
             <div className="sidebar-title">Настройки</div>
             <div className="sidebar-actions">
@@ -1268,45 +1300,6 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           </div>
 
           <div className="sidebar-scroll">
-            <div className="panel">
-              <div className="panel-title">Строки</div>
-              <div className="metrics-list">
-                {rowFields.length ? (
-                  rowFields.map(field => (
-                    <span key={`row-${field}`} className="chip">{field}</span>
-                  ))
-                ) : (
-                  <span className="chip empty">Не выбрано</span>
-                )}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="panel-title">Столбцы</div>
-              <div className="metrics-list">
-                {columnFields.length ? (
-                  columnFields.map(field => (
-                    <span key={`column-${field}`} className="chip">{field}</span>
-                  ))
-                ) : (
-                  <span className="chip empty">Не выбрано</span>
-                )}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="panel-title">Метрики</div>
-              <div className="metrics-list">
-                {metrics.length ? (
-                  metrics.map(metric => (
-                    <span key={`metric-${metric}`} className="chip">{metric}</span>
-                  ))
-                ) : (
-                  <span className="chip empty">Не выбрано</span>
-                )}
-              </div>
-            </div>
-
             <div className="panel">
               <div className="panel-title">Поля</div>
               <div className="field-list">
@@ -1322,61 +1315,32 @@ export default function SupersetPluginChartMyfirst(props: Props) {
             </div>
 
             <div className="panel">
-              <div className="panel-title">Фильтры</div>
-              <div className="filters-grid">
-                {availableDimensions.map(field => (
-                  <FilterDropdown
-                    key={field}
-                    label={field}
-                    options={dimensionValues[field] || []}
-                    selected={filters[field] || []}
-                    onChange={values => updateFilter(field, values)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="panel">
               <div className="panel-title">Подсказка</div>
               <div className="hint">
                 Нажмите на поле, чтобы отправить его в <strong>Строки</strong> или <strong>Столбцы</strong>.
-                Фильтры применяются сразу к данным таблицы.
               </div>
             </div>
+
+            {!!availableDimensions.length && (
+              <div className="panel">
+                <div className="panel-title">Фильтры</div>
+                <div className="filters-grid">
+                  {availableDimensions.map(field => (
+                    <FilterDropdown
+                      key={`filter-${field}`}
+                      label={field}
+                      options={dimensionValues[field] || []}
+                      selected={filters[field] || []}
+                      onChange={selected => updateFilter(field, selected)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
         <div className="content">
-          <div className="content-topbar">
-            <div className="content-topbar-left">
-              <div className="placement-summary">
-                <div className="placement-group">
-                  <span className="placement-label">Строки</span>
-                  {rowFields.length ? (
-                    rowFields.map(field => (
-                      <span key={`top-row-${field}`} className="chip">{field}</span>
-                    ))
-                  ) : (
-                    <span className="chip empty">Не выбрано</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="placement-summary">
-                <div className="placement-group">
-                  <span className="placement-label">Столбцы</span>
-                  {columnFields.length ? (
-                    columnFields.map(field => (
-                      <span key={`top-col-${field}`} className="chip">{field}</span>
-                    ))
-                  ) : (
-                    <span className="chip empty">Не выбрано</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
           <div className="table-scroll">
             <table>
               <thead>

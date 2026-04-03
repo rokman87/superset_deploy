@@ -35,7 +35,7 @@ export default function transformProps(chartProps: ChartProps) {
   const groupbyColumns = parseArray((formData as any).groupbyColumns);
   const selectableDimensionsRaw = parseArray((formData as any).selectableDimensions);
   const selectableDimensions = Array.from(
-    new Set([...selectableDimensionsRaw, ...groupbyRows, ...groupbyColumns]),
+    new Set([...selectableDimensionsRaw, ...groupbyRows, ...groupbyColumns])
   );
 
   const metricsRaw = (formData as any).metrics || [];
@@ -55,24 +55,29 @@ export default function transformProps(chartProps: ChartProps) {
     enableTotalsCamel !== undefined
       ? parseBoolean(enableTotalsCamel, true)
       : enableTotalsSnake !== undefined
-        ? parseBoolean(enableTotalsSnake, true)
-        : true;
+      ? parseBoolean(enableTotalsSnake, true)
+      : true;
 
   const showRowTotals =
     showGrandTotals &&
     (showRowTotalsCamel !== undefined
       ? parseBoolean(showRowTotalsCamel, true)
       : showRowTotalsSnake !== undefined
-        ? parseBoolean(showRowTotalsSnake, true)
-        : true);
+      ? parseBoolean(showRowTotalsSnake, true)
+      : true);
 
   const showColumnTotals =
     showGrandTotals &&
     (showColumnTotalsCamel !== undefined
       ? parseBoolean(showColumnTotalsCamel, true)
       : showColumnTotalsSnake !== undefined
-        ? parseBoolean(showColumnTotalsSnake, true)
-        : true);
+      ? parseBoolean(showColumnTotalsSnake, true)
+      : true);
+
+  const resolvedShowSidebar = parseBoolean(
+    (formData as any).myfirst_show_sidebar ?? (formData as any).myfirstShowSidebar,
+    true,
+  );
 
   return {
     width,
@@ -83,19 +88,18 @@ export default function transformProps(chartProps: ChartProps) {
     metrics,
     selectableDimensions,
 
-    // Важно: прокидываем и camelCase, и snake_case для надёжности
-    showSidebar: parseBoolean((formData as any).show_sidebar, true),
-    show_sidebar: parseBoolean((formData as any).show_sidebar, true),
+    showSidebar: resolvedShowSidebar,
+    myfirstShowSidebar: resolvedShowSidebar,
 
-    showSubtotals: parseBoolean((formData as any).show_subtotals, true),
+    showSubtotals: parseBoolean((formData as any).showSubtotals ?? (formData as any).show_subtotals, true),
     showGrandTotals,
     showRowTotals,
     showColumnTotals,
-    showCellBars: parseBoolean((formData as any).show_cell_bars, true),
-    showHeatmap: parseBoolean((formData as any).show_heatmap, true),
-    compactDisplay: parseBoolean((formData as any).compact_display, false),
-    defaultExpandDepth: Number((formData as any).default_expand_depth ?? 0),
-    numberFormatDigits: Number((formData as any).number_format_digits ?? 2),
-    nullLabel: String((formData as any).null_label || '—'),
+    showCellBars: parseBoolean((formData as any).showCellBars ?? (formData as any).show_cell_bars, true),
+    showHeatmap: parseBoolean((formData as any).showHeatmap ?? (formData as any).show_heatmap, true),
+    compactDisplay: parseBoolean((formData as any).compactDisplay ?? (formData as any).compact_display, false),
+    defaultExpandDepth: Number((formData as any).defaultExpandDepth ?? (formData as any).default_expand_depth ?? 0),
+    numberFormatDigits: Number((formData as any).numberFormatDigits ?? (formData as any).number_format_digits ?? 2),
+    nullLabel: String((formData as any).nullLabel ?? (formData as any).null_label ?? '—'),
   };
 }
