@@ -27,21 +27,67 @@ function parseBoolean(value: unknown, defaultValue = true): boolean {
   return Boolean(value);
 }
 
+type FieldDef = {
+  key: string;
+  label: string;
+};
+
+type MetricDef = {
+  key: string;
+  label: string;
+};
+
 export default function transformProps(chartProps: ChartProps) {
   const { width, height, formData, queriesData } = chartProps;
   const rawRecords = queriesData[0]?.data || [];
 
-  const groupbyRows = parseArray((formData as any).groupbyRows);
-  const groupbyColumns = parseArray((formData as any).groupbyColumns);
+  const groupbyRowsRaw = parseArray((formData as any).groupbyRows);
+  const groupbyColumnsRaw = parseArray((formData as any).groupbyColumns);
   const selectableDimensionsRaw = parseArray((formData as any).selectableDimensions);
-  const selectableDimensions = Array.from(
-    new Set([...selectableDimensionsRaw, ...groupbyRows, ...groupbyColumns])
-  );
+
+  const dataColumnNames: string[] = Array.isArray((queriesData[0] as any)?.colnames)
+    ? ((queriesData[0] as any).colnames as unknown[]).map(String)
+    : Object.keys(rawRecords[0] || {});
 
   const metricsRaw = (formData as any).metrics || [];
-  const metrics: string[] = (Array.isArray(metricsRaw) ? metricsRaw : [metricsRaw])
+  const metricLabels: string[] = (Array.isArray(metricsRaw) ? metricsRaw : [metricsRaw])
     .filter(Boolean)
     .map((metric: any) => (typeof metric === 'string' ? metric : getMetricLabel(metric)));
+
+  const dimensionCandidates = Array.from(
+    new Set([...groupbyRowsRaw, ...groupbyColumnsRaw, ...selectableDimensionsRaw]),
+  );
+
+  const dimensionKeys = dimensionCandidates.filter(col => dataColumnNames.includes(col));
+
+  const dimensionFields: FieldDef[] = dimensionKeys.map(key => ({
+    key,
+    label: key,
+  }));
+
+  const selectableDimensions = dimensionFields;
+
+  const rows: FieldDef[] = groupbyRowsRaw
+    .filter(col => dataColumnNames.includes(col))
+    .map(key => ({
+      key,
+      label: key,
+    }));
+
+  const columns: FieldDef[] = groupbyColumnsRaw
+    .filter(col => dataColumnNames.includes(col))
+    .map(key => ({
+      key,
+      label: key,
+    }));
+
+  const dimensionSet = new Set(dimensionKeys);
+  const metricKeys = dataColumnNames.filter(col => !dimensionSet.has(col));
+
+  const metrics: MetricDef[] = metricKeys.map((key, index) => ({
+    key,
+    label: metricLabels[index] ?? key,
+  }));
 
   const enableTotalsCamel = (formData as any).enableTotals;
   const showRowTotalsCamel = (formData as any).showRowTotals;
@@ -55,24 +101,24 @@ export default function transformProps(chartProps: ChartProps) {
     enableTotalsCamel !== undefined
       ? parseBoolean(enableTotalsCamel, true)
       : enableTotalsSnake !== undefined
-      ? parseBoolean(enableTotalsSnake, true)
-      : true;
+        ? parseBoolean(enableTotalsSnake, true)
+        : true;
 
   const showRowTotals =
     showGrandTotals &&
     (showRowTotalsCamel !== undefined
       ? parseBoolean(showRowTotalsCamel, true)
       : showRowTotalsSnake !== undefined
-      ? parseBoolean(showRowTotalsSnake, true)
-      : true);
+        ? parseBoolean(showRowTotalsSnake, true)
+        : true);
 
   const showColumnTotals =
     showGrandTotals &&
     (showColumnTotalsCamel !== undefined
       ? parseBoolean(showColumnTotalsCamel, true)
       : showColumnTotalsSnake !== undefined
-      ? parseBoolean(showColumnTotalsSnake, true)
-      : true);
+        ? parseBoolean(showColumnTotalsSnake, true)
+        : true);
 
   const resolvedShowSidebar = parseBoolean(
     (formData as any).myfirst_show_sidebar ?? (formData as any).myfirstShowSidebar,
@@ -83,23 +129,39 @@ export default function transformProps(chartProps: ChartProps) {
     width,
     height,
     data: rawRecords,
-    rows: groupbyRows,
-    columns: groupbyColumns,
+    rows,
+    columns,
     metrics,
     selectableDimensions,
 
     showSidebar: resolvedShowSidebar,
     myfirstShowSidebar: resolvedShowSidebar,
 
-    showSubtotals: parseBoolean((formData as any).showSubtotals ?? (formData as any).show_subtotals, true),
+    showSubtotals: parseBoolean(
+      (formData as any).showSubtotals ?? (formData as any).show_subtotals,
+      true,
+    ),
     showGrandTotals,
     showRowTotals,
     showColumnTotals,
-    showCellBars: parseBoolean((formData as any).showCellBars ?? (formData as any).show_cell_bars, true),
-    showHeatmap: parseBoolean((formData as any).showHeatmap ?? (formData as any).show_heatmap, true),
-    compactDisplay: parseBoolean((formData as any).compactDisplay ?? (formData as any).compact_display, false),
-    defaultExpandDepth: Number((formData as any).defaultExpandDepth ?? (formData as any).default_expand_depth ?? 0),
-    numberFormatDigits: Number((formData as any).numberFormatDigits ?? (formData as any).number_format_digits ?? 2),
+    showCellBars: parseBoolean(
+      (formData as any).showCellBars ?? (formData as any).show_cell_bars,
+      true,
+    ),
+    showHeatmap: parseBoolean(
+      (formData as any).showHeatmap ?? (formData as any).show_heatmap,
+      true,
+    ),
+    compactDisplay: parseBoolean(
+      (formData as any).compactDisplay ?? (formData as any).compact_display,
+      false,
+    ),
+    defaultExpandDepth: Number(
+      (formData as any).defaultExpandDepth ?? (formData as any).default_expand_depth ?? 0,
+    ),
+    numberFormatDigits: Number(
+      (formData as any).numberFormatDigits ?? (formData as any).number_format_digits ?? 2,
+    ),
     nullLabel: String((formData as any).nullLabel ?? (formData as any).null_label ?? '—'),
   };
 }

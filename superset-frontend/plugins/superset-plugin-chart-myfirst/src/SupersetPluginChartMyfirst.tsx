@@ -47,14 +47,24 @@ type PivotData = {
   rowHierarchy?: TreeNode[];
 };
 
+type FieldDef = {
+  key: string;
+  label: string;
+};
+
+type MetricDef = {
+  key: string;
+  label: string;
+};
+
 type NodeAgg = Record<string, Record<string, number>>;
 
 type Props = {
   data: any[];
-  rows?: string[];
-  columns?: string[];
-  metrics?: string[];
-  selectableDimensions?: string[];
+  rows?: FieldDef[];
+  columns?: FieldDef[];
+  metrics?: MetricDef[];
+  selectableDimensions?: FieldDef[];
   showSidebar?: boolean | string | number;
   myfirstShowSidebar?: boolean | string | number;
   showSubtotals?: boolean;
@@ -610,20 +620,21 @@ function toBoolean(value: unknown, defaultValue = true): boolean {
   return Boolean(value);
 }
 
-function arraysEqual(a: string[] = [], b: string[] = []) {
+function arraysEqual(a: FieldDef[] = [], b: FieldDef[] = []) {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
-    if (a[i] !== b[i]) return false;
+    if (a[i]?.key !== b[i]?.key) return false;
+    if (a[i]?.label !== b[i]?.label) return false;
   }
   return true;
 }
 
 function buildPivotData(
   records: any[],
-  rowFields: string[],
-  colFields: string[],
-  metrics: string[],
+  rowFields: FieldDef[],
+  colFields: FieldDef[],
+  metrics: MetricDef[],
   nullLabel: string,
 ): PivotData {
   const rows = new Map<string, PivotRow>();
@@ -632,13 +643,13 @@ function buildPivotData(
 
   records.forEach(item => {
     const rowValues = rowFields.length
-      ? rowFields.map(field => normalizeValue(item[field], nullLabel))
+      ? rowFields.map(field => normalizeValue(item[field.key], nullLabel))
       : ['Значение'];
     const rowKey = rowValues.join('|');
     if (!rows.has(rowKey)) rows.set(rowKey, { key: rowKey, values: rowValues });
 
     const colValues = colFields.length
-      ? colFields.map(field => normalizeValue(item[field], nullLabel))
+      ? colFields.map(field => normalizeValue(item[field.key], nullLabel))
       : ['Значение'];
     const colKey = colValues.join('|');
     if (!cols.has(colKey)) cols.set(colKey, { key: colKey, values: colValues });
@@ -647,14 +658,14 @@ function buildPivotData(
     if (!values[cellKey]) values[cellKey] = {};
 
     metrics.forEach(metric => {
-      const raw = item[metric];
+      const raw = item[metric.key];
       const num =
         typeof raw === 'number'
           ? raw
           : raw === null || raw === undefined || raw === ''
             ? 0
             : Number(raw) || 0;
-      values[cellKey][metric] = (values[cellKey][metric] || 0) + num;
+      values[cellKey][metric.key] = (values[cellKey][metric.key] || 0) + num;
     });
   });
 
@@ -911,37 +922,26 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return true;
   }, [rawMyfirstShowSidebar, rawShowSidebar]);
 
-  const availableDimensions = useMemo(
-    () => Array.from(new Set([...(selectableDimensions || []), ...(rows || []), ...(columns || [])])),
-    [selectableDimensions, rows, columns],
-  );
+  const availableDimensions = useMemo(() => {
+    const merged = [...(selectableDimensions || []), ...(rows || []), ...(columns || [])];
+    const map = new Map<string, FieldDef>();
 
-  
-  const lastExternalRowsRef = useRef<string[]>(rows || []);
-  const lastExternalColumnsRef = useRef<string[]>(columns || []);
+    merged.forEach(field => {
+      if (field?.key && !map.has(field.key)) {
+        map.set(field.key, field);
+      }
+    });
 
-  useEffect(() => {
-    const nextRows = rows || [];
-    const nextColumns = columns || [];
+    return Array.from(map.values());
+  }, [selectableDimensions, rows, columns]);
 
-    const rowsChanged = !arraysEqual(lastExternalRowsRef.current, nextRows);
-    const columnsChanged = !arraysEqual(lastExternalColumnsRef.current, nextColumns);
-
-    if (rowsChanged || columnsChanged) {
-      setRowFields(nextRows);
-      setColumnFields(nextColumns);
-      setExpanded(new Set());
-      lastExternalRowsRef.current = [...nextRows];
-      lastExternalColumnsRef.current = [...nextColumns];
-    }
-  }, [rows, columns]);
-  const [rowFields, setRowFields] = useState<string[]>(rows || []);
-  const [columnFields, setColumnFields] = useState<string[]>(columns || []);
+  const [rowFields, setRowFields] = useState<FieldDef[]>(rows || []);
+  const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
   const [filters, setFilters] = useState<Record<string, string[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // ✅ только один useRef для внешних rows/columns
-  const lastExternalRowsRef = useRef<string[]>(rows || []);
-  const lastExternalColumnsRef = useRef<string[]>(columns || []);
+
+  const lastExternalRowsRef = useRef<FieldDef[]>(rows || []);
+  const lastExternalColumnsRef = useRef<FieldDef[]>(columns || []);
 
   useEffect(() => {
     const nextRows = rows || [];
@@ -962,8 +962,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   const dimensionValues = useMemo(() => {
     const values: Record<string, string[]> = {};
     availableDimensions.forEach(field => {
-      values[field] = Array.from(
-        new Set(data.map(item => normalizeValue(item[field], nullLabel))),
+      values[field.key] = Array.from(
+        new Set(data.map(item => normalizeValue(item[field.key], nullLabel))),
       ).sort((a, b) => a.localeCompare(b));
     });
     return values;
@@ -1017,7 +1017,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
         pivotData.cols.forEach(col => {
           const cellKey = `${node.key}||${col.key}`;
           metrics.forEach(metric => {
-            addToAgg(agg, col.key, metric, pivotData.values[cellKey]?.[metric] || 0);
+            addToAgg(agg, col.key, metric.key, pivotData.values[cellKey]?.[metric.key] || 0);
           });
         });
       } else if (node.children?.length) {
@@ -1052,7 +1052,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
       visibleNodes.forEach(node => {
         pivotData.cols.forEach(col => {
-          const value = nodeAggMap.get(node.path)?.[col.key]?.[metric];
+          const value = nodeAggMap.get(node.path)?.[col.key]?.[metric.key];
           if (typeof value === 'number' && !Number.isNaN(value)) {
             vals.push(value);
           }
@@ -1060,11 +1060,11 @@ export default function SupersetPluginChartMyfirst(props: Props) {
       });
 
       if (!vals.length) {
-        ranges[metric] = { min: 0, max: 0, maxAbs: 0 };
+        ranges[metric.key] = { min: 0, max: 0, maxAbs: 0 };
       } else {
         const min = Math.min(...vals);
         const max = Math.max(...vals);
-        ranges[metric] = {
+        ranges[metric.key] = {
           min,
           max,
           maxAbs: Math.max(Math.abs(min), Math.abs(max)),
@@ -1086,8 +1086,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return String(value);
   };
 
-  const getNodeAggValue = (node: TreeNode, colKey: string, metric: string) =>
-    nodeAggMap.get(node.path)?.[colKey]?.[metric] ?? null;
+  const getNodeAggValue = (node: TreeNode, colKey: string, metricKey: string) =>
+    nodeAggMap.get(node.path)?.[colKey]?.[metricKey] ?? null;
 
   const getNodeTotal = (node: TreeNode) => {
     const agg = nodeAggMap.get(node.path);
@@ -1095,15 +1095,15 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return Object.keys(agg).reduce(
       (sum, colKey) =>
         sum +
-        metrics.reduce((mSum, metric) => mSum + (agg[colKey]?.[metric] || 0), 0),
+        metrics.reduce((mSum, metric) => mSum + (agg[colKey]?.[metric.key] || 0), 0),
       0,
     );
   };
 
-  const calculateColTotal = (col: PivotCol, metric: string) =>
+  const calculateColTotal = (col: PivotCol, metricKey: string) =>
     pivotData.rows.reduce((sum, row) => {
       const cellKey = `${row.key}||${col.key}`;
-      return sum + (pivotData.values[cellKey]?.[metric] || 0);
+      return sum + (pivotData.values[cellKey]?.[metricKey] || 0);
     }, 0);
 
   const calculateGrandTotal = () =>
@@ -1115,7 +1115,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           return (
             colSum +
             metrics.reduce(
-              (metricSum, metric) => metricSum + (pivotData.values[cellKey]?.[metric] || 0),
+              (metricSum, metric) => metricSum + (pivotData.values[cellKey]?.[metric.key] || 0),
               0,
             )
           );
@@ -1132,9 +1132,9 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     });
   };
 
-  const handlePlacementChange = (field: string, placement: 'off' | 'row' | 'column') => {
-    const nextRows = rowFields.filter(item => item !== field);
-    const nextCols = columnFields.filter(item => item !== field);
+  const handlePlacementChange = (field: FieldDef, placement: 'off' | 'row' | 'column') => {
+    const nextRows = rowFields.filter(item => item.key !== field.key);
+    const nextCols = columnFields.filter(item => item.key !== field.key);
 
     if (placement === 'row') {
       setRowFields([...nextRows, field]);
@@ -1152,9 +1152,9 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     setColumnFields(nextCols);
   };
 
-  const getPlacement = (field: string) => {
-    if (rowFields.includes(field)) return 'row';
-    if (columnFields.includes(field)) return 'column';
+  const getPlacement = (field: FieldDef) => {
+    if (rowFields.some(item => item.key === field.key)) return 'row';
+    if (columnFields.some(item => item.key === field.key)) return 'column';
     return 'off';
   };
 
@@ -1224,12 +1224,12 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           {pivotData.cols.map(col => (
             <React.Fragment key={col.key}>
               {metrics.map(metric => {
-                const value = getNodeAggValue(node, col.key, metric);
+                const value = getNodeAggValue(node, col.key, metric.key);
                 return (
                   <td
-                    key={`${node.path}-${col.key}-${metric}`}
+                    key={`${node.path}-${col.key}-${metric.key}`}
                     className="metric-value"
-                    style={getCellStyle(value, metric)}
+                    style={getCellStyle(value, metric.key)}
                   >
                     {showSubtotals || node.isLeaf ? formatValue(value) : '—'}
                   </td>
@@ -1305,8 +1305,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
               <div className="field-list">
                 {availableDimensions.map(field => (
                   <FieldPlacementMenu
-                    key={field}
-                    label={field}
+                    key={field.key}
+                    label={field.label}
                     value={getPlacement(field)}
                     onChange={placement => handlePlacementChange(field, placement)}
                   />
@@ -1327,11 +1327,11 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                 <div className="filters-grid">
                   {availableDimensions.map(field => (
                     <FilterDropdown
-                      key={`filter-${field}`}
-                      label={field}
-                      options={dimensionValues[field] || []}
-                      selected={filters[field] || []}
-                      onChange={selected => updateFilter(field, selected)}
+                      key={`filter-${field.key}`}
+                      label={field.label}
+                      options={dimensionValues[field.key] || []}
+                      selected={filters[field.key] || []}
+                      onChange={selected => updateFilter(field.key, selected)}
                     />
                   ))}
                 </div>
@@ -1346,7 +1346,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
               <thead>
                 <tr>
                   <th className="sticky-first">
-                    {rowFields.length ? rowFields.join(' → ') : 'Строки'}
+                    {rowFields.length ? rowFields.map(field => field.label).join(' → ') : 'Строки'}
                   </th>
 
                   {pivotData.cols.map(col => (
@@ -1363,7 +1363,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                   {pivotData.cols.map(col => (
                     <React.Fragment key={`${col.key}-metric`}>
                       {metrics.map(metric => (
-                        <th key={`${col.key}-${metric}`}>{metric}</th>
+                        <th key={`${col.key}-${metric.key}`}>{metric.label}</th>
                       ))}
                     </React.Fragment>
                   ))}
@@ -1397,8 +1397,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                     {pivotData.cols.map(col => (
                       <React.Fragment key={`${col.key}-grand`}>
                         {metrics.map(metric => (
-                          <td key={`${col.key}-${metric}-grand`} className="metric-value">
-                            <strong>{formatValue(calculateColTotal(col, metric))}</strong>
+                          <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
+                            <strong>{formatValue(calculateColTotal(col, metric.key))}</strong>
                           </td>
                         ))}
                       </React.Fragment>
