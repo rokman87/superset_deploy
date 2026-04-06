@@ -1,0 +1,34 @@
+{
+  "name": "custom-filters-modded",
+  "version": "0.1.0",
+  "description": "Configurable dropdown filter chart for Superset dashboards",
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "files": [
+    "esm",
+    "lib"
+  ],
+  "scripts": {
+    "prebuild": "rimraf {lib,esm,tsconfig.tsbuildinfo}",
+    "build": "npm run build-cjs && npm run build-esm",
+    "build-cjs": "babel src --extensions \".ts,.tsx,.js,.jsx\" --copy-files --out-dir lib",
+    "build-esm": "BABEL_OUTPUT=esm babel src --extensions \".ts,.tsx,.js,.jsx\" --copy-files --out-dir esm",
+    "dev": "BABEL_OUTPUT=esm babel src --extensions \".ts,.tsx,.js,.jsx\" --watch --copy-files --out-dir esm"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.28.6",
+    "@babel/core": "^7.29.0",
+    "@babel/plugin-transform-runtime": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@babel/runtime": "^7.28.6",
+    "rimraf": "^3.0.2"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "^0.18.0",
+    "@superset-ui/core": "^0.18.0",
+    "react": "^16.13.1 || ^17.0.2 || ^18.2.0",
+    "react-dom": "^16.13.1 || ^17.0.2 || ^18.2.0"
+  }
+}

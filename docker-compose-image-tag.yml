@@ -1,4 +1,4 @@
-x-superset-image: &superset-image custom_superset:0.2.2
+x-superset-image: &superset-image custom_superset:0.2.4
 x-superset-volumes:
   &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
   - ./docker:/app/docker

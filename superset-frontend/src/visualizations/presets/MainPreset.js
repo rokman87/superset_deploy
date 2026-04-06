@@ -23,6 +23,7 @@ import {
   VizType,
 } from '@superset-ui/core';
 import SupersetPluginChartMyfirst from '../../../plugins/superset-plugin-chart-myfirst/src';
+import CustomFiltersModdedChartPlugin from '../../../plugins/customFiltersModded/src';
 import CalendarChartPlugin from '@superset-ui/legacy-plugin-chart-calendar';
 import ChordChartPlugin from '@superset-ui/legacy-plugin-chart-chord';
 import CountryMapChartPlugin from '@superset-ui/legacy-plugin-chart-country-map';
@@ -108,6 +109,7 @@ export default class MainPreset extends Preset {
         new BigNumberTotalChartPlugin().configure({
           key: VizType.BigNumberTotal,
         }),
+        new CustomFiltersModdedChartPlugin().configure({ key: 'customFiltersModded' }),
         new SupersetPluginChartMyfirst().configure({ key: 'newTableNik' }),
         new EchartsBoxPlotChartPlugin().configure({ key: VizType.BoxPlot }),
         new BubbleChartPlugin().configure({ key: VizType.LegacyBubble }),
