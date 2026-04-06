@@ -48,7 +48,6 @@ const config: ControlPanelConfig = {
           },
         ],
         ['adhoc_filters'],
-        ['row_limit'],
       ],
     },
     {

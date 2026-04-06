@@ -1,7 +1,20 @@
 import { ChartProps, getMetricLabel } from '@superset-ui/core';
 
-function parseArray(value: unknown): string[] {
-  if (Array.isArray(value)) return value.filter(Boolean).map(String);
+type RawFieldOption =
+  | string
+  | {
+      label?: string;
+      value?: string;
+      column_name?: string;
+      optionName?: string;
+      verbose_name?: string;
+      sqlExpression?: string;
+      expression?: string;
+      [key: string]: any;
+    };
+
+function parseArray(value: unknown): RawFieldOption[] {
+  if (Array.isArray(value)) return value.filter(Boolean) as RawFieldOption[];
   if (typeof value === 'string') {
     return value
       .split(',')
@@ -37,6 +50,52 @@ type MetricDef = {
   label: string;
 };
 
+function compactString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function getFieldLabel(field: RawFieldOption): string {
+  if (typeof field === 'string') return field;
+
+  return (
+    compactString(field.label) ||
+    compactString(field.verbose_name) ||
+    compactString(field.value) ||
+    compactString(field.column_name) ||
+    compactString(field.optionName) ||
+    compactString(field.sqlExpression) ||
+    compactString(field.expression) ||
+    JSON.stringify(field)
+  );
+}
+
+function getFieldCandidates(field: RawFieldOption): string[] {
+  if (typeof field === 'string') return [field];
+
+  return [
+    compactString(field.value),
+    compactString(field.column_name),
+    compactString(field.optionName),
+    compactString(field.sqlExpression),
+    compactString(field.expression),
+    compactString(field.label),
+    compactString(field.verbose_name),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+}
+
+function buildFieldDef(field: RawFieldOption, dataColumnNames: string[]): FieldDef {
+  const candidates = getFieldCandidates(field);
+  const matchedKey = candidates.find(candidate => dataColumnNames.includes(candidate));
+  const fallbackKey = candidates[0] ?? getFieldLabel(field);
+
+  return {
+    key: matchedKey ?? fallbackKey,
+    label: getFieldLabel(field),
+  };
+}
+
 export default function transformProps(chartProps: ChartProps) {
   const { width, height, formData, queriesData } = chartProps;
   const rawRecords = queriesData[0]?.data || [];
@@ -54,34 +113,18 @@ export default function transformProps(chartProps: ChartProps) {
     .filter(Boolean)
     .map((metric: any) => (typeof metric === 'string' ? metric : getMetricLabel(metric)));
 
-  const dimensionCandidates = Array.from(
-    new Set([...groupbyRowsRaw, ...groupbyColumnsRaw, ...selectableDimensionsRaw]),
+  const rows = groupbyRowsRaw.map(field => buildFieldDef(field, dataColumnNames));
+  const columns = groupbyColumnsRaw.map(field => buildFieldDef(field, dataColumnNames));
+  const selectableDimensions = Array.from(
+    new Map(
+      [...selectableDimensionsRaw, ...groupbyRowsRaw, ...groupbyColumnsRaw].map(field => {
+        const resolved = buildFieldDef(field, dataColumnNames);
+        return [resolved.key, resolved] as const;
+      }),
+    ).values(),
   );
 
-  const dimensionKeys = dimensionCandidates.filter(col => dataColumnNames.includes(col));
-
-  const dimensionFields: FieldDef[] = dimensionKeys.map(key => ({
-    key,
-    label: key,
-  }));
-
-  const selectableDimensions = dimensionFields;
-
-  const rows: FieldDef[] = groupbyRowsRaw
-    .filter(col => dataColumnNames.includes(col))
-    .map(key => ({
-      key,
-      label: key,
-    }));
-
-  const columns: FieldDef[] = groupbyColumnsRaw
-    .filter(col => dataColumnNames.includes(col))
-    .map(key => ({
-      key,
-      label: key,
-    }));
-
-  const dimensionSet = new Set(dimensionKeys);
+  const dimensionSet = new Set(selectableDimensions.map(field => field.key));
   const metricKeys = dataColumnNames.filter(col => !dimensionSet.has(col));
 
   const metrics: MetricDef[] = metricKeys.map((key, index) => ({
