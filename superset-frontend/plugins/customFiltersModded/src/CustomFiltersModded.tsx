@@ -59,9 +59,9 @@ const Styles = styled.div<{
   height: 100%;
   overflow: auto;
   padding: ${({ cardPadding }) => `${cardPadding}px`};
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
   color: #0f172a;
 
   .filter-shell {
@@ -100,8 +100,8 @@ const Styles = styled.div<{
   .filter-card {
     padding: ${({ collapsed }) => (collapsed ? '4px 6px' : '6px 8px')};
     border-radius: 10px;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: transparent;
+    border: 1px solid transparent;
     min-width: ${({ minControlWidth }) => `${minControlWidth}px`};
   }
 
@@ -128,7 +128,7 @@ const Styles = styled.div<{
     align-items: center;
     justify-content: center;
     min-height: 120px;
-    background: #ffffff;
+    background: transparent;
     border-radius: 10px;
     border: 1px dashed #cbd5e1;
   }

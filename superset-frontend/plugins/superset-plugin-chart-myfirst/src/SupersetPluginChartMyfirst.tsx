@@ -12,6 +12,8 @@ type StyleProps = {
   headerTextColor?: string;
   grandTotalBg?: string;
   expandColor?: string;
+  subtotalBg?: string;
+  cellTextColor?: string;
   compactDisplay?: boolean;
   showSidebar?: boolean;
 };
@@ -65,6 +67,18 @@ type Props = {
   headerTextColor?: string;
   grandTotalBg?: string;
   expandColor?: string;
+  subtotalBg?: string;
+  cellTextColor?: string;
+  heatmapPositiveColor?: string;
+  heatmapNegativeColor?: string;
+  barPositiveColor?: string;
+  barNegativeColor?: string;
+  conditionalFormattingEnabled?: boolean;
+  conditionalFormattingMetric?: string;
+  conditionalFormattingOperator?: string;
+  conditionalFormattingThreshold?: number;
+  conditionalFormattingTextColor?: string;
+  conditionalFormattingBgColor?: string;
   height: number;
   width: number;
 };
@@ -112,43 +126,38 @@ const Styles = styled.div<StyleProps>`
     height: 100%;
     display: ${({ showSidebar }) => (showSidebar === false ? 'none' : 'flex')};
     flex-direction: column;
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.96);
     border-right: ${({ showSidebar }) =>
-      showSidebar === false ? 'none' : '1px solid rgba(148, 163, 184, 0.22)'};
-    backdrop-filter: blur(14px);
+      showSidebar === false ? 'none' : '1px solid rgba(226, 232, 240, 0.9)'};
     overflow: hidden;
     flex: 0 0 auto;
   }
 
   .sidebar-header {
-    padding: ${({ compactDisplay }) => (compactDisplay ? '12px' : '14px')};
-    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(255,255,255,0.92);
+    padding: ${({ compactDisplay }) => (compactDisplay ? '10px' : '12px')};
+    border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+    background: #fff;
   }
 
   .sidebar-title {
     font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #64748b;
-    margin-bottom: 10px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #0f172a;
+    margin-bottom: 8px;
   }
 
   .sidebar-actions {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .sidebar-scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    padding: 12px;
-    display: grid;
-    gap: 12px;
-    align-content: start;
+    padding: 8px;
   }
 
   .content {
@@ -160,24 +169,20 @@ const Styles = styled.div<StyleProps>`
   }
 
   .panel {
-    background: rgba(255,255,255,0.92);
-    border: 1px solid rgba(148, 163, 184, 0.24);
-    border-radius: 16px;
-    padding: 12px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
     min-width: 0;
-    box-shadow:
-      inset 0 1px 0 rgba(255,255,255,0.65),
-      0 4px 14px rgba(15, 23, 42, 0.04);
     overflow: visible;
   }
 
   .panel-title {
     font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0.04em;
     color: #64748b;
-    margin-bottom: 10px;
-    font-weight: 800;
+    margin: 0 0 8px;
+    font-weight: 600;
   }
 
   .hint {
@@ -188,41 +193,39 @@ const Styles = styled.div<StyleProps>`
 
   .btn {
     appearance: none;
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    background: rgba(255,255,255,0.98);
-    border-radius: 10px;
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
+    border: 1px solid rgba(226, 232, 240, 1);
+    background: #fff;
+    border-radius: 8px;
+    padding: 7px 8px;
+    font-size: 11px;
+    font-weight: 500;
     cursor: pointer;
     color: #334155;
-    transition: all 0.16s ease;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
-    text-align: left;
+    transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease;
+    text-align: center;
   }
 
   .btn:hover {
-    background: #ffffff;
-    transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+    background: #f8fafc;
+    border-color: rgba(148, 163, 184, 0.65);
   }
 
   .field-list {
     display: grid;
-    gap: 8px;
+    gap: 4px;
   }
 
   .field-card {
     position: relative;
-    border: 1px solid rgba(15, 23, 42, 0.14);
-    border-radius: 14px;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid rgba(226, 232, 240, 1);
+    border-radius: 10px;
+    background: #fff;
     overflow: visible;
   }
 
   .field-trigger {
     width: 100%;
-    padding: 12px 14px;
+    padding: 10px 12px;
     border: 0;
     background: transparent;
     cursor: pointer;
@@ -233,9 +236,9 @@ const Styles = styled.div<StyleProps>`
   }
 
   .field-name-large {
-    font-size: 13px;
-    font-weight: 700;
-    color: #1f2937;
+    font-size: 12px;
+    font-weight: 500;
+    color: #0f172a;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -250,56 +253,56 @@ const Styles = styled.div<StyleProps>`
   }
 
   .field-badge {
-    min-width: 58px;
+    min-width: 50px;
     text-align: center;
-    padding: 3px 8px;
+    padding: 2px 7px;
     border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    border: 1px solid rgba(148, 163, 184, 0.24);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: 1px solid rgba(226, 232, 240, 1);
     background: #fff;
     color: #64748b;
   }
 
   .field-badge.row {
-    background: rgba(59, 130, 246, 0.08);
-    color: #1d4ed8;
-    border-color: rgba(59, 130, 246, 0.18);
+    background: #eff6ff;
+    color: #2563eb;
+    border-color: #bfdbfe;
   }
 
   .field-badge.column {
-    background: rgba(16, 185, 129, 0.08);
-    color: #047857;
-    border-color: rgba(16, 185, 129, 0.18);
+    background: #ecfdf5;
+    color: #059669;
+    border-color: #a7f3d0;
   }
 
   .field-menu {
     position: absolute;
-    top: calc(100% + 8px);
+    top: calc(100% + 4px);
     left: 0;
     right: 0;
     z-index: 1200;
-    background: rgba(255,255,255,0.99);
-    border: 1px solid rgba(209, 213, 219, 0.9);
-    border-radius: 14px;
-    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
-    padding: 10px;
+    background: #fff;
+    border: 1px solid rgba(226, 232, 240, 1);
+    border-radius: 10px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    padding: 6px;
   }
 
   .field-option {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 9px 6px;
-    font-size: 14px;
-    color: #111827;
+    gap: 10px;
+    padding: 8px;
+    font-size: 12px;
+    color: #0f172a;
     cursor: pointer;
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .field-option:hover {
-    background: rgba(239, 246, 255, 0.85);
+    background: #f8fafc;
   }
 
   .field-option input {
@@ -497,6 +500,7 @@ const Styles = styled.div<StyleProps>`
     border-right: 1px solid rgba(241, 245, 249, 1);
     background: rgba(255,255,255,0.95);
     vertical-align: middle;
+    color: ${({ cellTextColor }) => cellTextColor || '#0f172a'};
   }
 
   tbody td:first-child {
@@ -526,12 +530,12 @@ const Styles = styled.div<StyleProps>`
   }
 
   .subtotal-row td {
-    background: #f6fafe;
+    background: ${({ subtotalBg }) => subtotalBg || '#f6fafe'};
     font-weight: 700;
   }
 
   .subtotal-row td:first-child {
-    background: #edf5ff;
+    background: ${({ subtotalBg }) => subtotalBg || '#edf5ff'};
   }
 
   .total-row td {
@@ -577,6 +581,58 @@ function toBoolean(value: unknown, defaultValue = true): boolean {
     if (['true', '1', 'on', 'yes'].includes(normalized)) return true;
   }
   return Boolean(value);
+}
+
+function withAlpha(color: string, alpha: number) {
+  const normalized = color.trim();
+  const safeAlpha = Math.max(0, Math.min(alpha, 1));
+
+  if (normalized.startsWith('#')) {
+    let hex = normalized.slice(1);
+    if (hex.length === 3) {
+      hex = hex
+        .split('')
+        .map(char => char + char)
+        .join('');
+    }
+    if (hex.length === 6) {
+      const red = parseInt(hex.slice(0, 2), 16);
+      const green = parseInt(hex.slice(2, 4), 16);
+      const blue = parseInt(hex.slice(4, 6), 16);
+      if ([red, green, blue].every(channel => !Number.isNaN(channel))) {
+        return `rgba(${red}, ${green}, ${blue}, ${safeAlpha})`;
+      }
+    }
+  }
+
+  return normalized;
+}
+
+function evaluateCondition(value: number, operator: string, threshold: number) {
+  switch (operator) {
+    case '>':
+      return value > threshold;
+    case '>=':
+      return value >= threshold;
+    case '<':
+      return value < threshold;
+    case '<=':
+      return value <= threshold;
+    case '=':
+      return value === threshold;
+    case '!=':
+      return value !== threshold;
+    default:
+      return false;
+  }
+}
+
+function formatPivotColumnLabel(col: PivotCol, columnFields: FieldDef[]) {
+  if (!columnFields.length) return 'Значение';
+  const values = col.values || [];
+  return columnFields
+    .map((field, index) => `${field.label}: ${values[index] ?? '—'}`)
+    .join(' | ');
 }
 
 function arraysEqual(a: FieldDef[] = [], b: FieldDef[] = []) {
@@ -799,6 +855,18 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     headerTextColor,
     grandTotalBg,
     expandColor,
+    subtotalBg,
+    cellTextColor,
+    heatmapPositiveColor = '#22c55e',
+    heatmapNegativeColor = '#ef4444',
+    barPositiveColor = '#22c55e',
+    barNegativeColor = '#ef4444',
+    conditionalFormattingEnabled = false,
+    conditionalFormattingMetric,
+    conditionalFormattingOperator = '>',
+    conditionalFormattingThreshold,
+    conditionalFormattingTextColor = '#ffffff',
+    conditionalFormattingBgColor = '#dc2626',
     height,
     width,
   } = props;
@@ -1183,28 +1251,49 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     if (value === null || value === undefined || Number.isNaN(value)) return {};
     const style: React.CSSProperties = {};
     const range = metricRanges[metricKey];
+    const metricDef = metrics.find(metric => metric.key === metricKey);
+    const resolvedConditionalMetric = conditionalFormattingMetric?.trim().toLowerCase();
+    const appliesConditionalFormatting =
+      conditionalFormattingEnabled &&
+      resolvedConditionalMetric &&
+      Number.isFinite(conditionalFormattingThreshold) &&
+      (metricKey.toLowerCase() === resolvedConditionalMetric ||
+        metricDef?.label.trim().toLowerCase() === resolvedConditionalMetric);
 
     if (showHeatmap && range) {
       if (range.min < 0 && range.max > 0 && range.maxAbs > 0) {
         const intensity = Math.min(Math.abs(value) / range.maxAbs, 1);
         if (value < 0) {
-          style.backgroundColor = `rgba(239, 68, 68, ${0.06 + intensity * 0.26})`;
+          style.backgroundColor = withAlpha(heatmapNegativeColor, 0.06 + intensity * 0.26);
         } else if (value > 0) {
-          style.backgroundColor = `rgba(34, 197, 94, ${0.06 + intensity * 0.26})`;
+          style.backgroundColor = withAlpha(heatmapPositiveColor, 0.06 + intensity * 0.26);
         }
       } else if (range.max !== range.min) {
         const intensity = (value - range.min) / (range.max - range.min);
-        style.backgroundColor = `rgba(59, 130, 246, ${0.05 + intensity * 0.18})`;
+        style.backgroundColor = withAlpha(
+          value < 0 ? heatmapNegativeColor : heatmapPositiveColor,
+          0.05 + intensity * 0.18,
+        );
       } else {
-        style.backgroundColor = 'rgba(59, 130, 246, 0.07)';
+        style.backgroundColor = withAlpha(value < 0 ? heatmapNegativeColor : heatmapPositiveColor, 0.07);
       }
     }
 
     if (showCellBars && range?.maxAbs > 0) {
       const widthPercent = Math.min((Math.abs(value) / range.maxAbs) * 100, 100);
-      const barColor = value < 0 ? 'rgba(239, 68, 68, 0.14)' : 'rgba(34, 197, 94, 0.14)';
+      const barColor = withAlpha(value < 0 ? barNegativeColor : barPositiveColor, 0.14);
       style.backgroundImage = `linear-gradient(90deg, ${barColor} ${widthPercent}%, transparent ${widthPercent}%)`;
       style.backgroundBlendMode = 'multiply';
+    }
+
+    if (
+      appliesConditionalFormatting &&
+      evaluateCondition(value, conditionalFormattingOperator, conditionalFormattingThreshold)
+    ) {
+      style.backgroundColor = conditionalFormattingBgColor;
+      style.color = conditionalFormattingTextColor;
+      style.fontWeight = 700;
+      style.backgroundImage = 'none';
     }
 
     return style;
@@ -1260,6 +1349,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
         headerTextColor={headerTextColor}
         grandTotalBg={grandTotalBg}
         expandColor={expandColor}
+        subtotalBg={subtotalBg}
+        cellTextColor={cellTextColor}
         compactDisplay={compactDisplay}
         showSidebar={resolvedShowSidebar}
       >
@@ -1275,6 +1366,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
       headerTextColor={headerTextColor}
       grandTotalBg={grandTotalBg}
       expandColor={expandColor}
+      subtotalBg={subtotalBg}
+      cellTextColor={cellTextColor}
       compactDisplay={compactDisplay}
       showSidebar={resolvedShowSidebar}
     >
@@ -1291,17 +1384,17 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           }}
         >
           <div className="sidebar-header">
-            <div className="sidebar-title">Настройки</div>
+            <div className="sidebar-title">Поля</div>
             <div className="sidebar-actions">
-              <button className="btn" onClick={expandAll}>Развернуть всё</button>
-              <button className="btn" onClick={collapseAll}>Свернуть всё</button>
-              <button className="btn" onClick={clearFilters}>Сбросить фильтры</button>
+              <button className="btn" onClick={expandAll}>Все</button>
+              <button className="btn" onClick={collapseAll}>Свернуть</button>
+              <button className="btn" onClick={clearFilters}>Сброс</button>
             </div>
           </div>
 
           <div className="sidebar-scroll">
             <div className="panel">
-              <div className="panel-title">Поля</div>
+              <div className="panel-title">Назначение</div>
               <div className="field-list">
                 {availableDimensions.map(field => (
                   <FieldPlacementMenu
@@ -1311,13 +1404,6 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                     onChange={placement => handlePlacementChange(field, placement)}
                   />
                 ))}
-              </div>
-            </div>
-
-            <div className="panel">
-              <div className="panel-title">Подсказка</div>
-              <div className="hint">
-                Нажмите на поле, чтобы отправить его в <strong>Строки</strong> или <strong>Столбцы</strong>.
               </div>
             </div>
           </div>
@@ -1334,7 +1420,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
                   {pivotCols.map(col => (
                     <th key={col.key} colSpan={metrics.length}>
-                      {columnFields.length ? col.values?.join(' → ') || '—' : 'Значение'}
+                      {formatPivotColumnLabel(col, columnFields)}
                     </th>
                   ))}
 

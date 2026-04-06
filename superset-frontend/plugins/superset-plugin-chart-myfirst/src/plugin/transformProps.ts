@@ -56,6 +56,11 @@ function compactString(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+function compactColor(value: unknown, fallback?: string): string | undefined {
+  const resolved = compactString(value);
+  return resolved ?? fallback;
+}
+
 function getFieldLabel(field: RawFieldOption): string {
   if (typeof field === 'string') return field;
 
@@ -206,5 +211,27 @@ export default function transformProps(chartProps: ChartProps) {
       (formData as any).numberFormatDigits ?? (formData as any).number_format_digits ?? 2,
     ),
     nullLabel: String((formData as any).nullLabel ?? (formData as any).null_label ?? '—'),
+    headerBg: compactColor((formData as any).headerBg),
+    headerTextColor: compactColor((formData as any).headerTextColor),
+    grandTotalBg: compactColor((formData as any).grandTotalBg),
+    expandColor: compactColor((formData as any).expandColor),
+    subtotalBg: compactColor((formData as any).subtotalBg),
+    cellTextColor: compactColor((formData as any).cellTextColor),
+    heatmapPositiveColor: compactColor((formData as any).heatmapPositiveColor),
+    heatmapNegativeColor: compactColor((formData as any).heatmapNegativeColor),
+    barPositiveColor: compactColor((formData as any).barPositiveColor),
+    barNegativeColor: compactColor((formData as any).barNegativeColor),
+    conditionalFormattingEnabled: parseBoolean(
+      (formData as any).conditionalFormattingEnabled,
+      false,
+    ),
+    conditionalFormattingMetric: compactString((formData as any).conditionalFormattingMetric),
+    conditionalFormattingOperator:
+      compactString((formData as any).conditionalFormattingOperator) ?? '>',
+    conditionalFormattingThreshold: Number((formData as any).conditionalFormattingThreshold),
+    conditionalFormattingTextColor: compactColor(
+      (formData as any).conditionalFormattingTextColor,
+    ),
+    conditionalFormattingBgColor: compactColor((formData as any).conditionalFormattingBgColor),
   };
 }

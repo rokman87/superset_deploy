@@ -178,6 +178,201 @@ const config: ControlPanelConfig = {
         ],
       ],
     },
+    {
+      label: t('Цвета'),
+      expanded: false,
+      controlSetRows: [
+        [
+          {
+            name: 'headerBg',
+            config: {
+              type: 'TextControl',
+              label: t('Фон заголовка'),
+              description: t('Например: #203247'),
+              default: '#203247',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'headerTextColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет текста заголовка'),
+              description: t('Например: #ffffff'),
+              default: '#ffffff',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'grandTotalBg',
+            config: {
+              type: 'TextControl',
+              label: t('Фон общего итога'),
+              description: t('Например: #203247'),
+              default: '#203247',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'expandColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет иконки раскрытия'),
+              description: t('Например: #64748b'),
+              default: '#64748b',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'subtotalBg',
+            config: {
+              type: 'TextControl',
+              label: t('Фон подытогов'),
+              description: t('Например: #f6fafe'),
+              default: '#f6fafe',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'cellTextColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет текста ячеек'),
+              description: t('Например: #0f172a'),
+              default: '#0f172a',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'heatmapPositiveColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет heatmap для положительных'),
+              description: t('Например: #22c55e'),
+              default: '#22c55e',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'heatmapNegativeColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет heatmap для отрицательных'),
+              description: t('Например: #ef4444'),
+              default: '#ef4444',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'barPositiveColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет полосы для положительных'),
+              description: t('Например: #22c55e'),
+              default: '#22c55e',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'barNegativeColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет полосы для отрицательных'),
+              description: t('Например: #ef4444'),
+              default: '#ef4444',
+              renderTrigger: true,
+            },
+          },
+        ],
+      ],
+    },
+    {
+      label: t('Условное форматирование'),
+      expanded: false,
+      controlSetRows: [
+        [
+          {
+            name: 'conditionalFormattingEnabled',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Включить условное форматирование'),
+              default: false,
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'conditionalFormattingMetric',
+            config: {
+              type: 'TextControl',
+              label: t('Метрика для правила'),
+              description: t('Укажите ключ или название метрики'),
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'conditionalFormattingOperator',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Оператор'),
+              default: '>',
+              renderTrigger: true,
+              choices: [
+                ['>', '>'],
+                ['>=', '>='],
+                ['<', '<'],
+                ['<=', '<='],
+                ['=', '='],
+                ['!=', '!='],
+              ],
+            },
+          },
+        ],
+        [
+          {
+            name: 'conditionalFormattingThreshold',
+            config: {
+              type: 'TextControl',
+              label: t('Порог'),
+              description: t('Например: 1000'),
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'conditionalFormattingTextColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет текста по условию'),
+              description: t('Например: #ffffff'),
+              default: '#ffffff',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'conditionalFormattingBgColor',
+            config: {
+              type: 'TextControl',
+              label: t('Цвет фона по условию'),
+              description: t('Например: #dc2626'),
+              default: '#dc2626',
+              renderTrigger: true,
+            },
+          },
+        ],
+      ],
+    },
   ],
 };
 
