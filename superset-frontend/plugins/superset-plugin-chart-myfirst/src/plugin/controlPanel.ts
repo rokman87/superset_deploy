@@ -1,4 +1,4 @@
-import { t, validateNonEmpty } from '@superset-ui/core';
+import { t } from '@superset-ui/core';
 import { ControlPanelConfig, sharedControls } from '@superset-ui/chart-controls';
 
 const config: ControlPanelConfig = {
@@ -42,8 +42,18 @@ const config: ControlPanelConfig = {
             name: 'metrics',
             config: {
               ...sharedControls.metrics,
-              validators: [validateNonEmpty],
-              label: t('Метрики'),
+              label: t('Метрики по умолчанию'),
+              description: t('Метрики, которые будут включены при первом открытии чарта'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'selectableMetrics',
+            config: {
+              ...sharedControls.metrics,
+              label: t('Доступные метрики'),
+              description: t('Метрики, которые можно включать в левой панели чарта'),
             },
           },
         ],
@@ -176,6 +186,68 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [
+          {
+            name: 'metricSummarySql',
+            config: {
+              type: 'CollectionControl',
+              label: t('Формулы для подытогов и итогов'),
+              description: t(
+                'Для каждой метрики можно отдельно задать формулу для промежуточных подытогов по уровням и для общего итога всей таблицы',
+              ),
+              controlName: 'SummarySqlMetricControl',
+              placeholder: t('Правила не добавлены'),
+              addTooltip: t('Добавить формулу для метрики'),
+              itemGenerator: () => ({
+                metric: undefined,
+                subtotalSql: '',
+                totalSql: '',
+              }),
+              renderTrigger: true,
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps(explore: any) {
+                const defaultMetrics = Array.isArray(explore?.controls?.metrics?.value)
+                  ? explore.controls.metrics.value
+                  : [];
+                const selectableMetrics = Array.isArray(explore?.controls?.selectableMetrics?.value)
+                  ? explore.controls.selectableMetrics.value
+                  : [];
+
+                const metricOptions = Array.from(
+                  new Map(
+                    [...defaultMetrics, ...selectableMetrics]
+                      .filter(Boolean)
+                      .map((metric: any) => {
+                        const value =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.optionName ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        const label =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.column?.verbose_name ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        return [String(value), { value: String(value), label: String(label) }] as const;
+                      }),
+                  ).values(),
+                );
+
+                return {
+                  metricOptions,
+                };
+              },
+            },
+          },
+        ],
       ],
     },
     {
@@ -300,74 +372,61 @@ const config: ControlPanelConfig = {
       controlSetRows: [
         [
           {
-            name: 'conditionalFormattingEnabled',
+            name: 'conditional_formatting',
             config: {
-              type: 'CheckboxControl',
-              label: t('Включить условное форматирование'),
-              default: false,
+              type: 'ConditionalFormattingControl',
+              label: t('Условное форматирование'),
+              description: t('Применяйте отдельные правила к разным метрикам'),
+              default: [],
               renderTrigger: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'conditionalFormattingMetric',
-            config: {
-              type: 'TextControl',
-              label: t('Метрика для правила'),
-              description: t('Укажите ключ или название метрики'),
-              renderTrigger: true,
-            },
-          },
-          {
-            name: 'conditionalFormattingOperator',
-            config: {
-              type: 'SelectControl',
-              freeForm: false,
-              label: t('Оператор'),
-              default: '>',
-              renderTrigger: true,
-              choices: [
-                ['>', '>'],
-                ['>=', '>='],
-                ['<', '<'],
-                ['<=', '<='],
-                ['=', '='],
-                ['!=', '!='],
-              ],
-            },
-          },
-        ],
-        [
-          {
-            name: 'conditionalFormattingThreshold',
-            config: {
-              type: 'TextControl',
-              label: t('Порог'),
-              description: t('Например: 1000'),
-              renderTrigger: true,
-            },
-          },
-          {
-            name: 'conditionalFormattingTextColor',
-            config: {
-              type: 'TextControl',
-              label: t('Цвет текста по условию'),
-              description: t('Например: #ffffff'),
-              default: '#ffffff',
-              renderTrigger: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'conditionalFormattingBgColor',
-            config: {
-              type: 'TextControl',
-              label: t('Цвет фона по условию'),
-              description: t('Например: #dc2626'),
-              default: '#dc2626',
-              renderTrigger: true,
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps(explore: any) {
+                const defaultMetrics = Array.isArray(explore?.controls?.metrics?.value)
+                  ? explore.controls.metrics.value
+                  : [];
+                const selectableMetrics = Array.isArray(explore?.controls?.selectableMetrics?.value)
+                  ? explore.controls.selectableMetrics.value
+                  : [];
+
+                const metrics = [...defaultMetrics, ...selectableMetrics];
+                const columnOptions = Array.from(
+                  new Map(
+                    metrics
+                      .filter(Boolean)
+                      .map((metric: any) => {
+                        const value =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.optionName ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        const label =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.column?.verbose_name ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        return [String(value), { value: String(value), label: String(label) }] as const;
+                      }),
+                  ).values(),
+                );
+
+                const verboseMap = Object.fromEntries(
+                  columnOptions.map(option => [option.value, option.label]),
+                );
+
+                return {
+                  removeIrrelevantConditions: true,
+                  columnOptions,
+                  verboseMap,
+                };
+              },
             },
           },
         ],

@@ -23,6 +23,7 @@ import {
   Modal,
   AsyncSelect,
   Button,
+  Checkbox,
   Form,
   Row,
   Col,
@@ -61,6 +62,32 @@ const StyledFormItem = styled(FormItem)`
   margin-bottom: 0;
 `;
 
+function parseChartParams(
+  params?: string | null,
+  fallback: Record<string, any> = {},
+) {
+  if (typeof params === 'string' && params.trim()) {
+    try {
+      const parsed = JSON.parse(params);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, any>;
+      }
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
+function isDashboardHeaderHidden(params?: Record<string, any>) {
+  return (
+    params?.hide_dashboard_header === true ||
+    params?.hide_dashboard_header === 'true' ||
+    params?.hide_dashboard_header === 1 ||
+    params?.hide_dashboard_header === '1'
+  );
+}
+
 function PropertiesModal({
   slice,
   onHide,
@@ -72,6 +99,12 @@ function PropertiesModal({
   const [form] = Form.useForm();
   // values of form inputs
   const [name, setName] = useState(slice.slice_name || '');
+  const [chartParams, setChartParams] = useState<Record<string, any>>(
+    slice.form_data ?? {},
+  );
+  const [hideDashboardHeader, setHideDashboardHeader] = useState(
+    isDashboardHeaderHidden(slice.form_data),
+  );
   const [selectedOwners, setSelectedOwners] = useState<SelectValue | null>(
     null,
   );
@@ -105,6 +138,7 @@ function PropertiesModal({
           'owners.id',
           'owners.first_name',
           'owners.last_name',
+          'params',
           'tags.id',
           'tags.name',
           'tags.type',
@@ -115,6 +149,9 @@ function PropertiesModal({
           endpoint: `/api/v1/chart/${slice.slice_id}?q=${queryParams}`,
         });
         const chart = response.json.result;
+        const parsedParams = parseChartParams(chart?.params, slice.form_data ?? {});
+        setChartParams(parsedParams);
+        setHideDashboardHeader(isDashboardHeaderHidden(parsedParams));
         setSelectedOwners(
           chart?.owners?.map((owner: any) => ({
             value: owner.id,
@@ -179,6 +216,13 @@ function PropertiesModal({
       certification_details:
         certifiedBy && certificationDetails ? certificationDetails : null,
     };
+    const nextParams = { ...chartParams };
+    if (hideDashboardHeader) {
+      nextParams.hide_dashboard_header = true;
+    } else {
+      delete nextParams.hide_dashboard_header;
+    }
+    payload.params = JSON.stringify(nextParams);
     if (selectedOwners) {
       payload.owners = (
         selectedOwners as {
@@ -216,12 +260,18 @@ function PropertiesModal({
   // get the owners of this slice
   useEffect(() => {
     fetchChartProperties();
-  }, [slice.slice_id]);
+  }, [fetchChartProperties]);
 
   // update name after it's changed in another modal
   useEffect(() => {
     setName(slice.slice_name || '');
   }, [slice.slice_name]);
+
+  useEffect(() => {
+    const nextParams = slice.form_data ?? {};
+    setChartParams(nextParams);
+    setHideDashboardHeader(isDashboardHeaderHidden(nextParams));
+  }, [slice.form_data]);
 
   const handleChangeTags = (tags: { label: string; value: number }[]) => {
     const parsedTags: TagType[] = ensureIsArray(tags).map(r => ({
@@ -354,6 +404,20 @@ function PropertiesModal({
               <StyledFormItem label={t('Cache timeout')} name="cache_timeout">
                 <Input aria-label="Cache timeout" />
               </StyledFormItem>
+            </FormItem>
+            <FormItem
+              extra={t(
+                'Hide the chart title and the three-dot menu in dashboard view for this chart only.',
+              )}
+            >
+              <Checkbox
+                checked={hideDashboardHeader}
+                onChange={() => {
+                  setHideDashboardHeader(!hideDashboardHeader);
+                }}
+              >
+                {t('Hide chart header on dashboards')}
+              </Checkbox>
             </FormItem>
             <Typography.Title level={3} style={{ marginTop: '1em' }}>
               {t('Access')}

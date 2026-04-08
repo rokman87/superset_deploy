@@ -42,12 +42,31 @@ function parseBoolean(value: unknown, defaultValue = true): boolean {
 
 type FieldDef = {
   key: string;
+  queryKey: string;
   label: string;
+  candidates?: string[];
+  queryField?: RawFieldOption;
 };
 
 type MetricDef = {
   key: string;
   label: string;
+  candidates?: string[];
+};
+
+type ConditionalFormattingRule = {
+  column?: string;
+  operator?: string;
+  targetValue?: number;
+  targetValueLeft?: number;
+  targetValueRight?: number;
+  colorScheme?: string;
+};
+
+type MetricSummarySqlRule = {
+  metric?: string;
+  subtotalSql?: string;
+  totalSql?: string;
 };
 
 function compactString(value: unknown): string | undefined {
@@ -80,11 +99,11 @@ function getFieldCandidates(field: RawFieldOption): string[] {
   if (typeof field === 'string') return [field];
 
   return [
-    compactString(field.value),
     compactString(field.column_name),
-    compactString(field.optionName),
     compactString(field.sqlExpression),
     compactString(field.expression),
+    compactString(field.value),
+    compactString(field.optionName),
     compactString(field.label),
     compactString(field.verbose_name),
   ].filter((candidate): candidate is string => Boolean(candidate));
@@ -94,10 +113,42 @@ function buildFieldDef(field: RawFieldOption, dataColumnNames: string[]): FieldD
   const candidates = getFieldCandidates(field);
   const matchedKey = candidates.find(candidate => dataColumnNames.includes(candidate));
   const fallbackKey = candidates[0] ?? getFieldLabel(field);
+  const queryKey = candidates[0] ?? matchedKey ?? fallbackKey;
 
   return {
     key: matchedKey ?? fallbackKey,
+    queryKey,
     label: getFieldLabel(field),
+    candidates,
+    queryField: field,
+  };
+}
+
+function getMetricCandidates(metric: any): string[] {
+  if (typeof metric === 'string') return [metric];
+
+  return [
+    compactString(metric?.label),
+    compactString(metric?.metric_name),
+    compactString(metric?.optionName),
+    compactString(metric?.column?.column_name),
+    compactString(metric?.column?.verbose_name),
+    compactString(metric?.column_name),
+    compactString(metric?.value),
+    compactString(metric?.expression),
+    compactString(metric?.sqlExpression),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+}
+
+function buildMetricDef(metric: any, dataColumnNames: string[]): MetricDef {
+  const candidates = getMetricCandidates(metric);
+  const matchedKey = candidates.find(candidate => dataColumnNames.includes(candidate));
+  const label = typeof metric === 'string' ? metric : getMetricLabel(metric);
+
+  return {
+    key: matchedKey ?? candidates[0] ?? label,
+    label,
+    candidates,
   };
 }
 
@@ -113,10 +164,14 @@ export default function transformProps(chartProps: ChartProps) {
     ? ((queriesData[0] as any).colnames as unknown[]).map(String)
     : Object.keys(rawRecords[0] || {});
 
-  const metricsRaw = (formData as any).metrics || [];
-  const metricLabels: string[] = (Array.isArray(metricsRaw) ? metricsRaw : [metricsRaw])
-    .filter(Boolean)
-    .map((metric: any) => (typeof metric === 'string' ? metric : getMetricLabel(metric)));
+  const metricsRaw = (Array.isArray((formData as any).metrics)
+    ? (formData as any).metrics
+    : [(formData as any).metrics]
+  ).filter(Boolean);
+  const selectableMetricsRaw = (Array.isArray((formData as any).selectableMetrics)
+    ? (formData as any).selectableMetrics
+    : [(formData as any).selectableMetrics]
+  ).filter(Boolean);
 
   const rows = groupbyRowsRaw.map(field => buildFieldDef(field, dataColumnNames));
   const columns = groupbyColumnsRaw.map(field => buildFieldDef(field, dataColumnNames));
@@ -129,13 +184,16 @@ export default function transformProps(chartProps: ChartProps) {
     ).values(),
   );
 
-  const dimensionSet = new Set(selectableDimensions.map(field => field.key));
-  const metricKeys = dataColumnNames.filter(col => !dimensionSet.has(col));
-
-  const metrics: MetricDef[] = metricKeys.map((key, index) => ({
-    key,
-    label: metricLabels[index] ?? key,
-  }));
+  const defaultMetrics: MetricDef[] = metricsRaw.map(metric => buildMetricDef(metric, dataColumnNames));
+  const selectableMetrics: MetricDef[] = selectableMetricsRaw.map(metric =>
+    buildMetricDef(metric, dataColumnNames),
+  );
+  const metrics = Array.from(
+    new Map(
+      [...defaultMetrics, ...selectableMetrics].map(metric => [metric.key, metric] as const),
+    ).values(),
+  );
+  const defaultMetricKeys = defaultMetrics.map(metric => metric.key);
 
   const enableTotalsCamel = (formData as any).enableTotals;
   const showRowTotalsCamel = (formData as any).showRowTotals;
@@ -177,9 +235,11 @@ export default function transformProps(chartProps: ChartProps) {
     width,
     height,
     data: rawRecords,
+    formData,
     rows,
     columns,
     metrics,
+    defaultMetricKeys,
     selectableDimensions,
 
     showSidebar: resolvedShowSidebar,
@@ -221,17 +281,11 @@ export default function transformProps(chartProps: ChartProps) {
     heatmapNegativeColor: compactColor((formData as any).heatmapNegativeColor),
     barPositiveColor: compactColor((formData as any).barPositiveColor),
     barNegativeColor: compactColor((formData as any).barNegativeColor),
-    conditionalFormattingEnabled: parseBoolean(
-      (formData as any).conditionalFormattingEnabled,
-      false,
-    ),
-    conditionalFormattingMetric: compactString((formData as any).conditionalFormattingMetric),
-    conditionalFormattingOperator:
-      compactString((formData as any).conditionalFormattingOperator) ?? '>',
-    conditionalFormattingThreshold: Number((formData as any).conditionalFormattingThreshold),
-    conditionalFormattingTextColor: compactColor(
-      (formData as any).conditionalFormattingTextColor,
-    ),
-    conditionalFormattingBgColor: compactColor((formData as any).conditionalFormattingBgColor),
+    conditionalFormatting: Array.isArray((formData as any).conditional_formatting)
+      ? ((formData as any).conditional_formatting as ConditionalFormattingRule[])
+      : [],
+    metricSummarySql: Array.isArray((formData as any).metricSummarySql)
+      ? ((formData as any).metricSummarySql as MetricSummarySqlRule[])
+      : [],
   };
 }

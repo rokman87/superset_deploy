@@ -23,6 +23,13 @@ type Props = {
   filters: FilterField[];
   optionsByFilter: Record<string, FilterOption[]>;
   selectedFilters: SelectedFilterMap;
+  filterSettings: Record<
+    string,
+    {
+      multiSelect?: boolean;
+      defaultValues?: DataRecordValue[];
+    }
+  >;
   columnTypeMap: Record<string, GenericDataType>;
   setDataMask: (dataMask: DataMask) => void;
   allowMultipleSelections: boolean;
@@ -252,37 +259,6 @@ function buildRawSelections(
   ) as SelectedFilterMap;
 }
 
-function parseDefaultFilterValues(
-  value: unknown,
-  filters: FilterField[],
-): Record<string, DataRecordValue[]> {
-  if (!value || typeof value !== 'string') {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(value) as Record<string, unknown>;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return {};
-    }
-
-    return Object.fromEntries(
-      filters.map(filter => {
-        const rawValue = parsed[filter.key];
-        if (Array.isArray(rawValue)) {
-          return [filter.key, rawValue as DataRecordValue[]];
-        }
-        if (rawValue === undefined || rawValue === null || rawValue === '') {
-          return [filter.key, []];
-        }
-        return [filter.key, [rawValue as DataRecordValue]];
-      }),
-    );
-  } catch {
-    return {};
-  }
-}
-
 export default function CustomFiltersModded(props: Props) {
   const {
     data,
@@ -290,6 +266,7 @@ export default function CustomFiltersModded(props: Props) {
     filters,
     optionsByFilter,
     selectedFilters,
+    filterSettings,
     columnTypeMap,
     setDataMask,
     allowMultipleSelections,
@@ -321,8 +298,24 @@ export default function CustomFiltersModded(props: Props) {
   const [loadingByFilter, setLoadingByFilter] = useState<Record<string, boolean>>({});
   const requestVersionRef = useRef<Record<string, number>>({});
   const defaultSelections = useMemo(
-    () => parseDefaultFilterValues(formData.defaultFilterValues, filters),
-    [filters, formData.defaultFilterValues],
+    () =>
+      Object.fromEntries(
+        filters.map(filter => [
+          filter.key,
+          Array.isArray(filterSettings?.[filter.key]?.defaultValues)
+            ? filterSettings[filter.key].defaultValues || []
+            : [],
+        ]),
+      ) as Record<string, DataRecordValue[]>,
+    [filterSettings, filters],
+  );
+
+  const isFilterMultiSelect = useCallback(
+    (filterKey: string) =>
+      typeof filterSettings?.[filterKey]?.multiSelect === 'boolean'
+        ? Boolean(filterSettings[filterKey].multiSelect)
+        : allowMultipleSelections,
+    [allowMultipleSelections, filterSettings],
   );
 
   useEffect(() => {
@@ -409,22 +402,45 @@ export default function CustomFiltersModded(props: Props) {
     const nextSelections = Object.fromEntries(
       filters.map(filter => [
         filter.key,
-        (hasExternalSelections
-          ? selectedFilters[filter.key] || []
-          : defaultSelections[filter.key] || []
+        (
+          isFilterMultiSelect(filter.key)
+            ? hasExternalSelections
+              ? selectedFilters[filter.key] || []
+              : defaultSelections[filter.key] || []
+            : (
+                hasExternalSelections
+                  ? selectedFilters[filter.key] || []
+                  : defaultSelections[filter.key] || []
+              ).slice(0, 1)
         ).map(value => serializeValue(value)),
       ]),
     );
-    setLocalSelections(nextSelections);
+    const hasSelectionChanges = filters.some(
+      filter =>
+        (localSelections[filter.key] || []).join('|') !==
+        (nextSelections[filter.key] || []).join('|'),
+    );
 
-    if (!hasExternalSelections) {
+    if (hasSelectionChanges) {
+      setLocalSelections(nextSelections);
+    }
+
+    if (!hasExternalSelections && hasSelectionChanges) {
       const rawSelections = buildRawSelections(filters, nextSelections, optionMaps);
       const hasDefaults = Object.values(rawSelections).some(values => values.length > 0);
       if (hasDefaults) {
         setDataMask(buildDataMask(rawSelections));
       }
     }
-  }, [defaultSelections, filters, optionMaps, selectedFilters, setDataMask]);
+  }, [
+    defaultSelections,
+    filters,
+    localSelections,
+    isFilterMultiSelect,
+    optionMaps,
+    selectedFilters,
+    setDataMask,
+  ]);
 
   const cascadedOptionsByFilter = useMemo(
     () =>
@@ -502,7 +518,7 @@ export default function CustomFiltersModded(props: Props) {
     const nextRemoteOptionsByFilter: Record<string, FilterOption[]> = {
       ...remoteOptionsByFilter,
     };
-    const nextValue = allowMultipleSelections ? values : values.slice(-1);
+    const nextValue = isFilterMultiSelect(filterKey) ? values : values.slice(-1);
     const changedIndex = filters.findIndex(filter => filter.key === filterKey);
 
     filters.forEach((filter, index) => {
@@ -717,14 +733,14 @@ export default function CustomFiltersModded(props: Props) {
                   </div>
                 ) : null}
                 <Select
-                  mode={allowMultipleSelections ? 'multiple' : undefined}
+                  mode={isFilterMultiSelect(filter.key) ? 'multiple' : undefined}
                   allowClear
                   showSearch={showSearch}
                   filterOption={isAsyncSearchable ? false : undefined}
                   size={controlSize}
                   placeholder={hideFilterLabels ? filter.label : `${t('Select')} ${filter.label.toLowerCase()}`}
                   value={
-                    allowMultipleSelections
+                    isFilterMultiSelect(filter.key)
                       ? localSelections[filter.key] || []
                       : localSelections[filter.key]?.[0]
                   }

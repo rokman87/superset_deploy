@@ -174,6 +174,25 @@ export default function transformProps(chartProps: ChartProps) {
     ),
   );
 
+  const filterSettingsRaw = (formData as any).filterSettings;
+  const filterSettings =
+    filterSettingsRaw && typeof filterSettingsRaw === 'object' && !Array.isArray(filterSettingsRaw)
+      ? Object.fromEntries(
+          filters.map(filter => [
+            filter.key,
+            {
+              multiSelect:
+                typeof filterSettingsRaw?.[filter.key]?.multiSelect === 'boolean'
+                  ? filterSettingsRaw[filter.key].multiSelect
+                  : undefined,
+              defaultValues: Array.isArray(filterSettingsRaw?.[filter.key]?.defaultValues)
+                ? filterSettingsRaw[filter.key].defaultValues
+                : [],
+            },
+          ]),
+        )
+      : {};
+
   return {
     width,
     height,
@@ -182,6 +201,7 @@ export default function transformProps(chartProps: ChartProps) {
     filters,
     optionsByFilter,
     selectedFilters,
+    filterSettings,
     columnTypeMap,
     setDataMask,
     allowMultipleSelections: parseBoolean((formData as any).allowMultipleSelections, true),

@@ -172,6 +172,11 @@ const SliceHeader = forwardRef<HTMLDivElement, SliceHeaderProps>(
     },
     ref,
   ) => {
+    const shouldHideDashboardHeader =
+      formData?.hide_dashboard_header === true ||
+      formData?.hide_dashboard_header === 'true' ||
+      formData?.hide_dashboard_header === 1 ||
+      formData?.hide_dashboard_header === '1';
     const SliceHeaderExtension = extensionsRegistry.get(
       'dashboard.slice.header',
     );
@@ -216,6 +221,10 @@ const SliceHeader = forwardRef<HTMLDivElement, SliceHeaderProps>(
     }, [sliceName, width, height, canExplore]);
 
     const exploreUrl = `/explore/?dashboard_page_id=${dashboardPageId}&slice_id=${slice.slice_id}`;
+
+    if (!editMode && shouldHideDashboardHeader) {
+      return null;
+    }
 
     const renderExploreLink = (title: string) => (
       <Link

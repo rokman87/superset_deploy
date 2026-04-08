@@ -16,6 +16,11 @@ export type FilterSetOption = {
   rawValue: string | number | boolean | null | undefined;
 };
 
+export type FilterSetting = {
+  multiSelect?: boolean;
+  defaultValues?: (string | number | boolean | null | undefined)[];
+};
+
 export type CustomFiltersModdedQueryFormData = QueryFormData & {
   filterColumns?: string[];
   panelTitle?: string;
@@ -36,7 +41,7 @@ export type CustomFiltersModdedQueryFormData = QueryFormData & {
   enableAsyncSearch?: boolean;
   asyncSearchThreshold?: number;
   asyncSearchRowLimit?: number;
-  defaultFilterValues?: string;
+  filterSettings?: Record<string, FilterSetting>;
 };
 
 export type CustomFiltersModdedProps = {
@@ -47,6 +52,7 @@ export type CustomFiltersModdedProps = {
   filters: FilterSetField[];
   optionsByFilter: Record<string, FilterSetOption[]>;
   selectedFilters: Record<string, (string | number | boolean | null | undefined)[]>;
+  filterSettings: Record<string, FilterSetting>;
   columnTypeMap: Record<string, GenericDataType>;
   setDataMask: SetDataMaskHook;
   allowMultipleSelections: boolean;

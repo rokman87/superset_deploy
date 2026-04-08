@@ -1,5 +1,6 @@
 import { ControlPanelConfig, sharedControls } from '@superset-ui/chart-controls';
 import { t, validateNonEmpty } from '@superset-ui/core';
+import FilterSettingsControl from './FilterSettingsControl';
 
 const config: ControlPanelConfig = {
   controlPanelSections: [
@@ -135,7 +136,7 @@ const config: ControlPanelConfig = {
             name: 'allowMultipleSelections',
             config: {
               type: 'CheckboxControl',
-              label: t('Allow multiple selections'),
+              label: t('Default multi select mode'),
               default: true,
               renderTrigger: true,
             },
@@ -286,27 +287,38 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'filterSettings',
+            config: {
+              type: FilterSettingsControl,
+              label: t('Filter settings'),
+              description: t('Set default values and single or multi select mode for each filter'),
+              default: {},
+              renderTrigger: true,
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps: ({ form_data }, _, chart) => {
+                const queryResult = chart?.queriesResponse?.[0] ?? {};
+                return {
+                  filterColumns: form_data?.filterColumns || [],
+                  colnames: queryResult?.colnames || [],
+                  data: queryResult?.data || [],
+                  emptyValueLabel: form_data?.emptyValueLabel || '(Empty)',
+                  defaultAllowMultipleSelections:
+                    form_data?.allowMultipleSelections ?? true,
+                };
+              },
+            },
+          },
+        ],
+        [
+          {
             name: 'showResetButton',
             config: {
               type: 'CheckboxControl',
               label: t('Show reset button'),
               default: true,
               renderTrigger: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'defaultFilterValues',
-            config: {
-              type: 'TextAreaControl',
-              label: t('Default filter values'),
-              default: '',
-              renderTrigger: true,
-              description: t(
-                'JSON object with default values per filter, for example {"country":"RU","status":["active","pending"]}',
-              ),
-              rows: 4,
             },
           },
         ],

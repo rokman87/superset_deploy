@@ -25,32 +25,56 @@ type PivotCol = {
 
 type FieldDef = {
   key: string;
+  queryKey?: string;
   label: string;
+  candidates?: string[];
+  queryField?: string | Record<string, any>;
 };
 
 type MetricDef = {
   key: string;
   label: string;
+  candidates?: string[];
+};
+
+type ConditionalFormattingRule = {
+  column?: string;
+  operator?: string;
+  targetValue?: number;
+  targetValueLeft?: number;
+  targetValueRight?: number;
+  colorScheme?: string;
 };
 
 type NodeAgg = Record<string, Record<string, number>>;
 
+type MetricSummarySqlRule = {
+  metric?: string;
+  subtotalSql?: string;
+  totalSql?: string;
+};
+
 type LoadedNode = {
   pathKey: string;
   pathValues: string[];
+  rawPathValues: any[];
   name: string;
   level: number;
   hasChildren: boolean;
   isLeaf: boolean;
   agg: NodeAgg;
+  subtotalAgg?: NodeAgg;
 };
 
 type Props = {
   data: any[];
+  formData?: any;
   rows?: FieldDef[];
   columns?: FieldDef[];
   metrics?: MetricDef[];
+  defaultMetricKeys?: string[];
   selectableDimensions?: FieldDef[];
+  metricSummarySql?: MetricSummarySqlRule[];
   showSidebar?: boolean | string | number;
   myfirstShowSidebar?: boolean | string | number;
   showSubtotals?: boolean;
@@ -73,12 +97,7 @@ type Props = {
   heatmapNegativeColor?: string;
   barPositiveColor?: string;
   barNegativeColor?: string;
-  conditionalFormattingEnabled?: boolean;
-  conditionalFormattingMetric?: string;
-  conditionalFormattingOperator?: string;
-  conditionalFormattingThreshold?: number;
-  conditionalFormattingTextColor?: string;
-  conditionalFormattingBgColor?: string;
+  conditionalFormatting?: ConditionalFormattingRule[];
   height: number;
   width: number;
 };
@@ -92,8 +111,16 @@ type FilterDropdownProps = {
 
 type FieldPlacementMenuProps = {
   label: string;
-  value: 'off' | 'row' | 'column';
-  onChange: (placement: 'off' | 'row' | 'column') => void;
+  rowOrder?: number;
+  columnOrder?: number;
+  onToggleRow: () => void;
+  onToggleColumn: () => void;
+};
+
+type MetricSelectorProps = {
+  metrics: MetricDef[];
+  activeMetricKeys: string[];
+  onToggle: (metricKey: string) => void;
 };
 
 const Styles = styled.div<StyleProps>`
@@ -157,7 +184,7 @@ const Styles = styled.div<StyleProps>`
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    padding: 8px;
+    padding: 6px 8px 8px;
   }
 
   .content {
@@ -181,7 +208,7 @@ const Styles = styled.div<StyleProps>`
     font-size: 11px;
     letter-spacing: 0.04em;
     color: #64748b;
-    margin: 0 0 8px;
+    margin: 0 0 6px;
     font-weight: 600;
   }
 
@@ -215,101 +242,126 @@ const Styles = styled.div<StyleProps>`
     gap: 4px;
   }
 
-  .field-card {
-    position: relative;
-    border: 1px solid rgba(226, 232, 240, 1);
-    border-radius: 10px;
-    background: #fff;
-    overflow: visible;
+  .field-list-header {
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) 28px 28px 14px;
+    gap: 8px;
+    align-items: center;
+    padding: 0 6px 6px;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.9);
   }
 
-  .field-trigger {
-    width: 100%;
-    padding: 10px 12px;
-    border: 0;
-    background: transparent;
-    cursor: pointer;
+  .field-axis-label {
+    justify-self: center;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+
+  .field-card {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: 14px minmax(0, 1fr) 28px 28px 14px;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
+    padding: 7px 6px;
+    border-bottom: 1px solid rgba(241, 245, 249, 1);
+    background: transparent;
   }
 
   .field-name-large {
     font-size: 12px;
-    font-weight: 500;
-    color: #0f172a;
+    font-weight: 400;
+    color: #334155;
     text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .field-icons {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: #111827;
+  .field-drag,
+  .field-tail-icon {
+    color: #cbd5e1;
+    font-size: 11px;
+    line-height: 1;
+    text-align: center;
+    user-select: none;
   }
 
-  .field-badge {
-    min-width: 50px;
+  .field-checkbox {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
-    padding: 2px 7px;
-    border-radius: 999px;
-    font-size: 10px;
+    padding: 0;
+    border-radius: 6px;
+    font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.01em;
     border: 1px solid rgba(226, 232, 240, 1);
     background: #fff;
-    color: #64748b;
+    color: transparent;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
   }
 
-  .field-badge.row {
-    background: #eff6ff;
+  .field-checkbox:hover {
+    border-color: rgba(203, 213, 225, 1);
+    background: rgba(248, 250, 252, 0.8);
+  }
+
+  .field-checkbox.row.active {
+    background: #ffffff;
     color: #2563eb;
-    border-color: #bfdbfe;
+    border-color: #93c5fd;
   }
 
-  .field-badge.column {
-    background: #ecfdf5;
+  .field-checkbox.column.active {
+    background: #ffffff;
     color: #059669;
-    border-color: #a7f3d0;
+    border-color: #86efac;
   }
 
-  .field-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 1200;
-    background: #fff;
-    border: 1px solid rgba(226, 232, 240, 1);
-    border-radius: 10px;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
-    padding: 6px;
+  .metric-list {
+    display: grid;
+    gap: 4px;
+    margin-top: 8px;
   }
 
-  .field-option {
+  .metric-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px;
-    font-size: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(226, 232, 240, 1);
+    border-radius: 10px;
+    background: #fff;
     color: #0f172a;
+    font-size: 12px;
     cursor: pointer;
-    border-radius: 8px;
   }
 
-  .field-option:hover {
+  .metric-item:hover {
     background: #f8fafc;
   }
 
-  .field-option input {
-    width: 18px;
-    height: 18px;
+  .metric-item input {
     margin: 0;
-    accent-color: #3b82f6;
+    accent-color: #2563eb;
+  }
+
+  .metric-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .dropdown {
@@ -571,6 +623,20 @@ function normalizeValue(value: any, nullLabel: string) {
   return String(value);
 }
 
+function getFieldRawValue(record: Record<string, any>, field: FieldDef) {
+  const candidateKeys = Array.from(
+    new Set([field.queryKey, field.key, ...(field.candidates || []), field.label].filter(Boolean)),
+  );
+
+  for (const candidate of candidateKeys) {
+    if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+      return record[candidate];
+    }
+  }
+
+  return undefined;
+}
+
 function toBoolean(value: unknown, defaultValue = true): boolean {
   if (value === undefined || value === null) return defaultValue;
   if (typeof value === 'boolean') return value;
@@ -613,18 +679,90 @@ function evaluateCondition(value: number, operator: string, threshold: number) {
     case '>':
       return value > threshold;
     case '>=':
+    case '≥':
       return value >= threshold;
     case '<':
       return value < threshold;
     case '<=':
+    case '≤':
       return value <= threshold;
     case '=':
       return value === threshold;
     case '!=':
+    case '≠':
       return value !== threshold;
+    case 'None':
+      return true;
     default:
       return false;
   }
+}
+
+function evaluateConditionalRule(
+  value: number,
+  rule: ConditionalFormattingRule,
+) {
+  switch (rule.operator) {
+    case undefined:
+    case 'None':
+      return true;
+    case '< x <':
+      return (
+        Number.isFinite(rule.targetValueLeft) &&
+        Number.isFinite(rule.targetValueRight) &&
+        value > Number(rule.targetValueLeft) &&
+        value < Number(rule.targetValueRight)
+      );
+    case '≤ x ≤':
+      return (
+        Number.isFinite(rule.targetValueLeft) &&
+        Number.isFinite(rule.targetValueRight) &&
+        value >= Number(rule.targetValueLeft) &&
+        value <= Number(rule.targetValueRight)
+      );
+    case '≤ x <':
+      return (
+        Number.isFinite(rule.targetValueLeft) &&
+        Number.isFinite(rule.targetValueRight) &&
+        value >= Number(rule.targetValueLeft) &&
+        value < Number(rule.targetValueRight)
+      );
+    case '< x ≤':
+      return (
+        Number.isFinite(rule.targetValueLeft) &&
+        Number.isFinite(rule.targetValueRight) &&
+        value > Number(rule.targetValueLeft) &&
+        value <= Number(rule.targetValueRight)
+      );
+    default:
+      return Number.isFinite(rule.targetValue)
+        ? evaluateCondition(value, rule.operator || 'None', Number(rule.targetValue))
+        : false;
+  }
+}
+
+function getConditionalFormattingColors(colorScheme?: string) {
+  switch (colorScheme) {
+    case 'colorSuccessBg':
+    case 'Green':
+      return { backgroundColor: '#dcfce7', color: '#166534' };
+    case 'colorWarningBg':
+      return { backgroundColor: '#fef3c7', color: '#92400e' };
+    case 'colorErrorBg':
+    case 'Red':
+      return { backgroundColor: '#fee2e2', color: '#991b1b' };
+    default:
+      return undefined;
+  }
+}
+
+function buildSqlMetric(label: string, sqlExpression: string) {
+  return {
+    expressionType: 'SQL',
+    sqlExpression,
+    label,
+    optionName: label,
+  };
 }
 
 function formatPivotColumnLabel(col: PivotCol, columnFields: FieldDef[]) {
@@ -639,13 +777,29 @@ function arraysEqual(a: FieldDef[] = [], b: FieldDef[] = []) {
   if (a === b) return true;
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
-    if (a[i]?.key !== b[i]?.key || a[i]?.label !== b[i]?.label) return false;
+    if (
+      a[i]?.key !== b[i]?.key ||
+      a[i]?.queryKey !== b[i]?.queryKey ||
+      a[i]?.label !== b[i]?.label
+    ) {
+      return false;
+    }
   }
   return true;
 }
 
-function pathToKey(pathValues: string[]) {
-  return pathValues.join(PATH_SEPARATOR);
+function serializePathValue(value: any) {
+  if (value === null) return 'null:';
+  if (value === undefined) return 'undefined:';
+  if (typeof value === 'string') return `string:${value}`;
+  if (typeof value === 'number') return `number:${value}`;
+  if (typeof value === 'boolean') return `boolean:${value}`;
+  if (typeof value === 'object') return `object:${JSON.stringify(value)}`;
+  return `${typeof value}:${String(value)}`;
+}
+
+function pathToKey(pathValues: any[]) {
+  return pathValues.map(serializePathValue).join(PATH_SEPARATOR);
 }
 
 function aggregateNode(
@@ -659,7 +813,7 @@ function aggregateNode(
 
   records.forEach(item => {
     const colValues = colFields.length
-      ? colFields.map(field => normalizeValue(item[field.key], nullLabel))
+      ? colFields.map(field => normalizeValue(getFieldRawValue(item, field), nullLabel))
       : ['Значение'];
     const colKey = colValues.join('|');
 
@@ -690,6 +844,150 @@ function aggregateNode(
   }
 
   return { cols, agg };
+}
+
+function mergeNodeAggs(
+  nodes: LoadedNode[],
+  subtotalNodes: LoadedNode[],
+) {
+  const subtotalMap = new Map(subtotalNodes.map(node => [node.pathKey, node.subtotalAgg ?? node.agg]));
+  return nodes.map(node => ({
+    ...node,
+    subtotalAgg: subtotalMap.get(node.pathKey),
+  }));
+}
+
+function buildLoadedNodes(
+  records: any[],
+  rowFields: FieldDef[],
+  columnFields: FieldDef[],
+  metrics: MetricDef[],
+  nullLabel: string,
+  parentRawPathValues: any[] = [],
+  parentPathValues: string[] = [],
+): LoadedNode[] {
+  const level = parentRawPathValues.length;
+  const currentField = rowFields[level];
+  if (!currentField) return [];
+
+  const grouped = new Map<any, any[]>();
+
+  records.forEach(record => {
+    const rawValue = getFieldRawValue(record, currentField) ?? null;
+    if (!grouped.has(rawValue)) {
+      grouped.set(rawValue, []);
+    }
+    grouped.get(rawValue)!.push(record);
+  });
+
+  return Array.from(grouped.entries())
+    .sort((a, b) =>
+      normalizeValue(a[0], nullLabel).localeCompare(normalizeValue(b[0], nullLabel), 'ru'),
+    )
+    .map(([rawValue, rows]) => {
+      const name = normalizeValue(rawValue, nullLabel);
+      const rawPathValues = [...parentRawPathValues, rawValue];
+      const pathValues = [...parentPathValues, name];
+      const pathKey = pathToKey(rawPathValues);
+      const { agg } = aggregateNode(rows, columnFields, metrics, nullLabel);
+      const hasChildren = level < rowFields.length - 1;
+
+      return {
+        pathKey,
+        pathValues,
+        rawPathValues,
+        name,
+        level,
+        hasChildren,
+        isLeaf: !hasChildren,
+        agg,
+      };
+    });
+}
+
+function buildHierarchyState(
+  records: any[],
+  rowFields: FieldDef[],
+  columnFields: FieldDef[],
+  metrics: MetricDef[],
+  nullLabel: string,
+) {
+  const nodesByPath: Record<string, LoadedNode> = {};
+  const childrenByParent: Record<string, string[]> = {
+    [ROOT_NODE_KEY]: [],
+  };
+
+  const visit = (
+    levelRecords: any[],
+    parentPathKey: string,
+    parentRawPathValues: any[] = [],
+    parentPathValues: string[] = [],
+  ) => {
+    const level = parentRawPathValues.length;
+    const currentField = rowFields[level];
+
+    if (!currentField) {
+      childrenByParent[parentPathKey] = [];
+      return;
+    }
+
+    const grouped = new Map<any, any[]>();
+
+    levelRecords.forEach(record => {
+      const rawValue = getFieldRawValue(record, currentField) ?? null;
+      if (!grouped.has(rawValue)) {
+        grouped.set(rawValue, []);
+      }
+      grouped.get(rawValue)!.push(record);
+    });
+
+    const childNodes = Array.from(grouped.entries())
+      .sort((a, b) =>
+        normalizeValue(a[0], nullLabel).localeCompare(normalizeValue(b[0], nullLabel), 'ru'),
+      )
+      .map(([rawValue, groupedRows]) => {
+        const name = normalizeValue(rawValue, nullLabel);
+        const rawPathValues = [...parentRawPathValues, rawValue];
+        const pathValues = [...parentPathValues, name];
+        const pathKey = pathToKey(rawPathValues);
+        const { agg } = aggregateNode(groupedRows, columnFields, metrics, nullLabel);
+        const hasChildren = level < rowFields.length - 1;
+
+        const node: LoadedNode = {
+          pathKey,
+          pathValues,
+          rawPathValues,
+          name,
+          level,
+          hasChildren,
+          isLeaf: !hasChildren,
+          agg,
+        };
+
+        nodesByPath[pathKey] = node;
+        if (hasChildren) {
+          visit(groupedRows, pathKey, rawPathValues, pathValues);
+        } else {
+          childrenByParent[pathKey] = [];
+        }
+        return node;
+      });
+
+    childrenByParent[parentPathKey] = childNodes.map(node => node.pathKey);
+  };
+
+  if (rowFields.length && metrics.length) {
+    visit(records, ROOT_NODE_KEY);
+  }
+
+  const totals = aggregateNode(records, columnFields, metrics, nullLabel);
+
+  return {
+    nodesByPath,
+    childrenByParent,
+    pivotCols: totals.cols,
+    grandAgg: totals.agg,
+  };
 }
 
 function FilterDropdown({ label, options, selected, onChange }: FilterDropdownProps) {
@@ -768,66 +1066,53 @@ function FilterDropdown({ label, options, selected, onChange }: FilterDropdownPr
   );
 }
 
-function FieldPlacementMenu({ label, value, onChange }: FieldPlacementMenuProps) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const handleClick = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  const badgeClass =
-    value === 'row' ? 'field-badge row' : value === 'column' ? 'field-badge column' : 'field-badge';
-  const badgeText = value === 'row' ? 'Строка' : value === 'column' ? 'Столбец' : 'Выкл';
-
+function FieldPlacementMenu({
+  label,
+  rowOrder,
+  columnOrder,
+  onToggleRow,
+  onToggleColumn,
+}: FieldPlacementMenuProps) {
   return (
-    <div className="field-card" ref={rootRef}>
-      <button type="button" className="field-trigger" onClick={() => setOpen(prev => !prev)}>
-        <span className="field-name-large">{label}</span>
-        <span className="field-icons">
-          <span className={badgeClass}>{badgeText}</span>
-        </span>
+    <div className="field-card">
+      <span className="field-drag" aria-hidden="true">⋮⋮</span>
+      <span className="field-name-large" title={label}>
+        {label}
+      </span>
+      <button
+        type="button"
+        className={`field-checkbox row ${rowOrder ? 'active' : ''}`}
+        onClick={onToggleRow}
+        aria-label={`Назначить поле ${label} в строки`}
+      >
+        {rowOrder ?? ''}
       </button>
+      <button
+        type="button"
+        className={`field-checkbox column ${columnOrder ? 'active' : ''}`}
+        onClick={onToggleColumn}
+        aria-label={`Назначить поле ${label} в столбцы`}
+      >
+        {columnOrder ?? ''}
+      </button>
+      <span className="field-tail-icon" aria-hidden="true">▽</span>
+    </div>
+  );
+}
 
-      {open && (
-        <div className="field-menu">
-          <label className="field-option">
-            <input
-              type="radio"
-              name={`placement-${label}`}
-              checked={value === 'row'}
-              onChange={() => onChange('row')}
-            />
-            <span>Строка</span>
-          </label>
-
-          <label className="field-option">
-            <input
-              type="radio"
-              name={`placement-${label}`}
-              checked={value === 'column'}
-              onChange={() => onChange('column')}
-            />
-            <span>Столбец</span>
-          </label>
-
-          <label className="field-option">
-            <input
-              type="radio"
-              name={`placement-${label}`}
-              checked={value === 'off'}
-              onChange={() => onChange('off')}
-            />
-            <span>Отключить</span>
-          </label>
-        </div>
-      )}
+function MetricSelector({ metrics, activeMetricKeys, onToggle }: MetricSelectorProps) {
+  return (
+    <div className="metric-list">
+      {metrics.map(metric => (
+        <label key={metric.key} className="metric-item">
+          <input
+            type="checkbox"
+            checked={activeMetricKeys.includes(metric.key)}
+            onChange={() => onToggle(metric.key)}
+          />
+          <span>{metric.label}</span>
+        </label>
+      ))}
     </div>
   );
 }
@@ -835,9 +1120,11 @@ function FieldPlacementMenu({ label, value, onChange }: FieldPlacementMenuProps)
 export default function SupersetPluginChartMyfirst(props: Props) {
   const {
     data = [],
+    formData,
     rows = [],
     columns = [],
     metrics = [],
+    defaultMetricKeys = [],
     selectableDimensions = [],
     showSidebar: rawShowSidebar,
     myfirstShowSidebar: rawMyfirstShowSidebar,
@@ -861,12 +1148,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     heatmapNegativeColor = '#ef4444',
     barPositiveColor = '#22c55e',
     barNegativeColor = '#ef4444',
-    conditionalFormattingEnabled = false,
-    conditionalFormattingMetric,
-    conditionalFormattingOperator = '>',
-    conditionalFormattingThreshold,
-    conditionalFormattingTextColor = '#ffffff',
-    conditionalFormattingBgColor = '#dc2626',
+    conditionalFormatting = [],
+    metricSummarySql = [],
     height,
     width,
   } = props;
@@ -892,12 +1175,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
   const [rowFields, setRowFields] = useState<FieldDef[]>(rows || []);
   const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
-  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [activeMetricKeys, setActiveMetricKeys] = useState<string[]>(defaultMetricKeys);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [nodesByPath, setNodesByPath] = useState<Record<string, LoadedNode>>({});
-  const [childrenByParent, setChildrenByParent] = useState<Record<string, string[]>>({
-    [ROOT_NODE_KEY]: [],
-  });
 
   const lastExternalRowsRef = useRef<FieldDef[]>(rows || []);
   const lastExternalColumnsRef = useRef<FieldDef[]>(columns || []);
@@ -918,166 +1197,47 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     }
   }, [rows, columns]);
 
-  const dimensionValues = useMemo(() => {
-    const values: Record<string, string[]> = {};
-    availableDimensions.forEach(field => {
-      values[field.key] = Array.from(new Set(data.map(item => normalizeValue(item[field.key], nullLabel)))).sort(
-        (a, b) => a.localeCompare(b),
-      );
-    });
-    return values;
-  }, [availableDimensions, data, nullLabel]);
-
-  const filteredRecords = useMemo(
-    () =>
-      data.filter(record =>
-        Object.entries(filters).every(
-          ([field, accepted]) => !accepted?.length || accepted.includes(normalizeValue(record[field], nullLabel)),
-        ),
-      ),
-    [data, filters, nullLabel],
-  );
-
-  const columnData = useMemo(
-    () => aggregateNode(filteredRecords, columnFields, metrics, nullLabel),
-    [filteredRecords, columnFields, metrics, nullLabel],
-  );
-
-  const pivotCols = columnData.cols;
-  const grandAgg = columnData.agg;
-
-  const buildChildrenForPath = useMemo(() => {
-    return (pathValues: string[]): LoadedNode[] => {
-      const level = pathValues.length;
-      const currentField = rowFields[level];
-      if (!currentField) return [];
-
-      const grouped = new Map<string, any[]>();
-
-      filteredRecords.forEach(record => {
-        for (let index = 0; index < pathValues.length; index += 1) {
-          const parentField = rowFields[index];
-          if (!parentField) return;
-          if (normalizeValue(record[parentField.key], nullLabel) !== pathValues[index]) {
-            return;
-          }
-        }
-
-        const currentValue = normalizeValue(record[currentField.key], nullLabel);
-        if (!grouped.has(currentValue)) grouped.set(currentValue, []);
-        grouped.get(currentValue)!.push(record);
-      });
-
-      return Array.from(grouped.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([name, records]) => {
-          const nextPathValues = [...pathValues, name];
-          const pathKey = pathToKey(nextPathValues);
-          const { agg } = aggregateNode(records, columnFields, metrics, nullLabel);
-          const hasChildren = level < rowFields.length - 1;
-
-          return {
-            pathKey,
-            pathValues: nextPathValues,
-            name,
-            level,
-            hasChildren,
-            isLeaf: !hasChildren,
-            agg,
-          };
-        });
-    };
-  }, [filteredRecords, rowFields, columnFields, metrics, nullLabel]);
-
-  const loadChildren = (parentPathKey: string, parentPathValues: string[]) => {
-    const children = buildChildrenForPath(parentPathValues);
-    const childKeys = children.map(child => child.pathKey);
-
-    setNodesByPath(prev => {
-      const next = { ...prev };
-      children.forEach(child => {
-        next[child.pathKey] = child;
-      });
-      return next;
-    });
-
-    setChildrenByParent(prev => ({
-      ...prev,
-      [parentPathKey]: childKeys,
-    }));
-
-    return childKeys;
-  };
-
-  const removeDescendantsFromCache = (parentPathKey: string) => {
-    const descendantKeys = new Set<string>();
-
-    const collect = (pathKey: string) => {
-      const childKeys = childrenByParent[pathKey] || [];
-      childKeys.forEach(childKey => {
-        descendantKeys.add(childKey);
-        collect(childKey);
-      });
-    };
-
-    collect(parentPathKey);
-
-    if (!descendantKeys.size) return;
-
-    setNodesByPath(prev => {
-      const next = { ...prev };
-      descendantKeys.forEach(key => {
-        delete next[key];
-      });
-      return next;
-    });
-
-    setChildrenByParent(prev => {
-      const next = { ...prev };
-      descendantKeys.forEach(key => {
-        delete next[key];
-      });
-      next[parentPathKey] = [];
-      return next;
-    });
-
-    setExpanded(prev => {
-      const next = new Set(prev);
-      descendantKeys.forEach(key => next.delete(key));
-      return next;
-    });
-  };
-
   useEffect(() => {
-    setExpanded(new Set());
-    setNodesByPath({});
-    setChildrenByParent({ [ROOT_NODE_KEY]: [] });
+    const nextMetricKeys = (metrics || []).map(metric => metric.key);
+    setActiveMetricKeys(prev => {
+      const filtered = prev.filter(metricKey => nextMetricKeys.includes(metricKey));
+      if (filtered.length) return filtered;
+      const defaultKeys = defaultMetricKeys.filter(metricKey => nextMetricKeys.includes(metricKey));
+      return defaultKeys.length ? defaultKeys : nextMetricKeys;
+    });
+  }, [metrics, defaultMetricKeys]);
 
-    if (!rowFields.length) return;
+  const activeMetrics = useMemo(
+    () => metrics.filter(metric => activeMetricKeys.includes(metric.key)),
+    [metrics, activeMetricKeys],
+  );
 
-    const rootKeys = loadChildren(ROOT_NODE_KEY, []);
+  const hierarchyState = useMemo(
+    () => buildHierarchyState(data, rowFields, columnFields, activeMetrics, nullLabel),
+    [data, rowFields, columnFields, activeMetrics, nullLabel],
+  );
+
+  const { nodesByPath, childrenByParent, pivotCols, grandAgg } = hierarchyState;
+
+  const defaultExpanded = useMemo(() => {
+    const nextExpanded = new Set<string>();
 
     if (defaultExpandDepth > 0) {
-      const nextExpanded = new Set<string>();
-      let currentLevelKeys = rootKeys;
-
-      for (let depth = 0; depth < defaultExpandDepth; depth += 1) {
-        if (!currentLevelKeys.length) break;
-        const nextLevelKeys: string[] = [];
-
-        currentLevelKeys.forEach(pathKey => {
-          const nodePath = pathKey ? pathKey.split(PATH_SEPARATOR) : [];
-          nextExpanded.add(pathKey);
-          const childKeys = loadChildren(pathKey, nodePath);
-          nextLevelKeys.push(...childKeys);
-        });
-
-        currentLevelKeys = nextLevelKeys;
-      }
-
-      setExpanded(nextExpanded);
+      Object.values(nodesByPath).forEach(node => {
+        if (node.hasChildren && node.level < defaultExpandDepth) {
+          nextExpanded.add(node.pathKey);
+        }
+      });
     }
-  }, [rowFields, columnFields, filters, metrics, defaultExpandDepth, buildChildrenForPath]);
+
+    return nextExpanded;
+  }, [nodesByPath, defaultExpandDepth]);
+
+  useEffect(() => {
+    setExpanded(new Set(defaultExpanded));
+  }, [defaultExpanded]);
+
+  const isLoading = false;
 
   const visibleNodes = useMemo(() => {
     const result: LoadedNode[] = [];
@@ -1101,7 +1261,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   const metricRanges = useMemo(() => {
     const ranges: Record<string, { min: number; max: number; maxAbs: number }> = {};
 
-    metrics.forEach(metric => {
+    activeMetrics.forEach(metric => {
       const vals: number[] = [];
 
       visibleNodes.forEach(node => {
@@ -1123,7 +1283,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     });
 
     return ranges;
-  }, [metrics, visibleNodes, pivotCols]);
+  }, [activeMetrics, visibleNodes, pivotCols]);
 
   const formatValue = (value: any) => {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
@@ -1137,11 +1297,19 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   };
 
   const getNodeAggValue = (node: LoadedNode, colKey: string, metricKey: string) =>
-    node.agg[colKey]?.[metricKey] ?? null;
+    (node.hasChildren && node.subtotalAgg ? node.subtotalAgg[colKey]?.[metricKey] : node.agg[colKey]?.[metricKey]) ??
+    null;
 
   const getNodeTotal = (node: LoadedNode) =>
-    Object.keys(node.agg).reduce(
-      (sum, colKey) => sum + metrics.reduce((metricSum, metric) => metricSum + (node.agg[colKey]?.[metric.key] || 0), 0),
+    Object.keys(node.hasChildren && node.subtotalAgg ? node.subtotalAgg : node.agg).reduce(
+      (sum, colKey) =>
+        sum +
+        activeMetrics.reduce(
+          (metricSum, metric) =>
+            metricSum +
+            ((node.hasChildren && node.subtotalAgg ? node.subtotalAgg[colKey]?.[metric.key] : node.agg[colKey]?.[metric.key]) || 0),
+          0,
+        ),
       0,
     );
 
@@ -1149,29 +1317,29 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
   const calculateGrandTotal = () =>
     Object.keys(grandAgg).reduce(
-      (sum, colKey) => sum + metrics.reduce((metricSum, metric) => metricSum + (grandAgg[colKey]?.[metric.key] || 0), 0),
+      (sum, colKey) =>
+        sum +
+        activeMetrics.reduce(
+          (metricSum, metric) => metricSum + (grandAgg[colKey]?.[metric.key] || 0),
+          0,
+        ),
       0,
     );
 
   const toggleExpand = (node: LoadedNode) => {
     if (!node.hasChildren) return;
+    const isExpandedNow = expanded.has(node.pathKey);
 
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(node.pathKey)) {
+    if (isExpandedNow) {
+      setExpanded(prev => {
+        const next = new Set(prev);
         next.delete(node.pathKey);
         return next;
-      }
-      next.add(node.pathKey);
-      return next;
-    });
-
-    const childKeys = childrenByParent[node.pathKey] || [];
-    if (!childKeys.length) {
-      loadChildren(node.pathKey, node.pathValues);
-    } else if (expanded.has(node.pathKey)) {
-      removeDescendantsFromCache(node.pathKey);
+      });
+      return;
     }
+
+    setExpanded(prev => new Set(prev).add(node.pathKey));
   };
 
   const handlePlacementChange = (field: FieldDef, placement: 'off' | 'row' | 'column') => {
@@ -1200,65 +1368,87 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return 'off';
   };
 
-  const updateFilter = (field: string, selected: string[]) => {
-    setFilters(prev => ({ ...prev, [field]: selected }));
+  const getRowOrder = (field: FieldDef) => {
+    const index = rowFields.findIndex(item => item.key === field.key);
+    return index >= 0 ? index + 1 : undefined;
   };
 
-  const clearFilters = () => setFilters({});
+  const getColumnOrder = (field: FieldDef) => {
+    const index = columnFields.findIndex(item => item.key === field.key);
+    return index >= 0 ? index + 1 : undefined;
+  };
+
+  const orderedDimensions = useMemo(() => {
+    const rowOrder = new Map(rowFields.map((field, index) => [field.key, index]));
+    const columnOrder = new Map(columnFields.map((field, index) => [field.key, index]));
+
+    return [...availableDimensions].sort((left, right) => {
+      const leftPlacement = getPlacement(left);
+      const rightPlacement = getPlacement(right);
+
+      const priority = { row: 0, column: 1, off: 2 } as const;
+      const placementDelta = priority[leftPlacement] - priority[rightPlacement];
+      if (placementDelta !== 0) return placementDelta;
+
+      if (leftPlacement === 'row' && rightPlacement === 'row') {
+        return (rowOrder.get(left.key) ?? 0) - (rowOrder.get(right.key) ?? 0);
+      }
+
+      if (leftPlacement === 'column' && rightPlacement === 'column') {
+        return (columnOrder.get(left.key) ?? 0) - (columnOrder.get(right.key) ?? 0);
+      }
+
+      return left.label.localeCompare(right.label, 'ru');
+    });
+  }, [availableDimensions, rowFields, columnFields]);
+
+  const toggleMetric = (metricKey: string) => {
+    setActiveMetricKeys(prev =>
+      prev.includes(metricKey) ? prev.filter(key => key !== metricKey) : [...prev, metricKey],
+    );
+  };
+
+  const toggleFieldPlacement = (field: FieldDef, placement: 'row' | 'column') => {
+    const currentPlacement = getPlacement(field);
+    if (currentPlacement === placement) {
+      handlePlacementChange(field, 'off');
+      return;
+    }
+    handlePlacementChange(field, placement);
+  };
+
+  const clearFilters = () => {
+    setActiveMetricKeys(metrics.map(metric => metric.key));
+    setExpanded(new Set());
+  };
 
   const expandAll = () => {
-    if (!rowFields.length) return;
-
-    let frontier = childrenByParent[ROOT_NODE_KEY] || [];
     const nextExpanded = new Set<string>();
-
-    if (!frontier.length) {
-      frontier = loadChildren(ROOT_NODE_KEY, []);
-    }
-
-    while (frontier.length) {
-      const nextFrontier: string[] = [];
-      frontier.forEach(pathKey => {
-        const node = nodesByPath[pathKey];
-        const pathValues = node?.pathValues || pathKey.split(PATH_SEPARATOR);
-        const childKeys = (childrenByParent[pathKey] || []).length
-          ? childrenByParent[pathKey]
-          : loadChildren(pathKey, pathValues);
-        if (childKeys.length) {
-          nextExpanded.add(pathKey);
-          nextFrontier.push(...childKeys);
-        }
-      });
-      frontier = nextFrontier;
-    }
-
+    Object.values(nodesByPath).forEach(node => {
+      if (node.hasChildren) {
+        nextExpanded.add(node.pathKey);
+      }
+    });
     setExpanded(nextExpanded);
   };
 
   const collapseAll = () => {
     setExpanded(new Set());
-    setNodesByPath(prev => {
-      const next: Record<string, LoadedNode> = {};
-      (childrenByParent[ROOT_NODE_KEY] || []).forEach(key => {
-        if (prev[key]) next[key] = prev[key];
-      });
-      return next;
-    });
-    setChildrenByParent(prev => ({ [ROOT_NODE_KEY]: prev[ROOT_NODE_KEY] || [] }));
   };
 
   const getCellStyle = (value: number | null, metricKey: string): React.CSSProperties => {
     if (value === null || value === undefined || Number.isNaN(value)) return {};
     const style: React.CSSProperties = {};
     const range = metricRanges[metricKey];
-    const metricDef = metrics.find(metric => metric.key === metricKey);
-    const resolvedConditionalMetric = conditionalFormattingMetric?.trim().toLowerCase();
-    const appliesConditionalFormatting =
-      conditionalFormattingEnabled &&
-      resolvedConditionalMetric &&
-      Number.isFinite(conditionalFormattingThreshold) &&
-      (metricKey.toLowerCase() === resolvedConditionalMetric ||
-        metricDef?.label.trim().toLowerCase() === resolvedConditionalMetric);
+    const metricDef = activeMetrics.find(metric => metric.key === metricKey);
+    const applicableConditionalRules = conditionalFormatting.filter(rule => {
+      const column = rule.column?.trim().toLowerCase();
+      if (!column) return false;
+      return (
+        metricKey.toLowerCase() === column ||
+        metricDef?.label.trim().toLowerCase() === column
+      );
+    });
 
     if (showHeatmap && range) {
       if (range.min < 0 && range.max > 0 && range.maxAbs > 0) {
@@ -1286,14 +1476,18 @@ export default function SupersetPluginChartMyfirst(props: Props) {
       style.backgroundBlendMode = 'multiply';
     }
 
-    if (
-      appliesConditionalFormatting &&
-      evaluateCondition(value, conditionalFormattingOperator, conditionalFormattingThreshold)
-    ) {
-      style.backgroundColor = conditionalFormattingBgColor;
-      style.color = conditionalFormattingTextColor;
-      style.fontWeight = 700;
-      style.backgroundImage = 'none';
+    const matchedRule = [...applicableConditionalRules]
+      .reverse()
+      .find(rule => evaluateConditionalRule(value, rule));
+
+    if (matchedRule) {
+      const colors = getConditionalFormattingColors(matchedRule.colorScheme);
+      if (colors) {
+        style.backgroundColor = colors.backgroundColor;
+        style.color = colors.color;
+        style.fontWeight = 700;
+        style.backgroundImage = 'none';
+      }
     }
 
     return style;
@@ -1321,7 +1515,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
           {pivotCols.map(col => (
             <React.Fragment key={col.key}>
-              {metrics.map(metric => {
+              {activeMetrics.map(metric => {
                 const value = getNodeAggValue(node, col.key, metric.key);
                 return (
                   <td
@@ -1395,16 +1589,34 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           <div className="sidebar-scroll">
             <div className="panel">
               <div className="panel-title">Назначение</div>
+              <div className="field-list-header">
+                <span />
+                <span>Поле</span>
+                <span className="field-axis-label">Строки</span>
+                <span className="field-axis-label">Столбцы</span>
+                <span />
+              </div>
               <div className="field-list">
-                {availableDimensions.map(field => (
+                {orderedDimensions.map(field => (
                   <FieldPlacementMenu
                     key={field.key}
                     label={field.label}
-                    value={getPlacement(field)}
-                    onChange={placement => handlePlacementChange(field, placement)}
+                    rowOrder={getRowOrder(field)}
+                    columnOrder={getColumnOrder(field)}
+                    onToggleRow={() => toggleFieldPlacement(field, 'row')}
+                    onToggleColumn={() => toggleFieldPlacement(field, 'column')}
                   />
                 ))}
               </div>
+            </div>
+
+            <div className="panel">
+              <div className="panel-title">Метрики</div>
+              <MetricSelector
+                metrics={metrics}
+                activeMetricKeys={activeMetricKeys}
+                onToggle={toggleMetric}
+              />
             </div>
           </div>
         </div>
@@ -1418,48 +1630,62 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                     {rowFields.length ? rowFields.map(field => field.label).join(' → ') : 'Строки'}
                   </th>
 
-                  {pivotCols.map(col => (
-                    <th key={col.key} colSpan={metrics.length}>
+                  {activeMetrics.length > 0 && pivotCols.map(col => (
+                    <th key={col.key} colSpan={activeMetrics.length}>
                       {formatPivotColumnLabel(col, columnFields)}
                     </th>
                   ))}
 
-                  {showGrandTotals && showRowTotals && <th>Итого</th>}
+                  {activeMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
                 </tr>
 
                 <tr>
                   <th className="sticky-first" />
-                  {pivotCols.map(col => (
+                  {activeMetrics.length > 0 && pivotCols.map(col => (
                     <React.Fragment key={`${col.key}-metric`}>
-                      {metrics.map(metric => (
+                      {activeMetrics.map(metric => (
                         <th key={`${col.key}-${metric.key}`}>{metric.label}</th>
                       ))}
                     </React.Fragment>
                   ))}
-                  {showGrandTotals && showRowTotals && <th />}
+                  {activeMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
                 </tr>
               </thead>
 
               <tbody>
-                {rowFields.length ? (
+                {!activeMetrics.length ? (
+                  <tr>
+                    <td colSpan={1}>
+                      <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
+                    </td>
+                  </tr>
+                ) : isLoading ? (
+                  <tr>
+                    <td
+                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                    >
+                      <div className="table-placeholder">Загрузка агрегированных данных...</div>
+                    </td>
+                  </tr>
+                ) : rowFields.length ? (
                   renderRows()
                 ) : (
                   <tr>
                     <td
-                      colSpan={1 + pivotCols.length * Math.max(metrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
                     >
                       <div className="table-placeholder">Выберите хотя бы одно поле в строки или столбцы.</div>
                     </td>
                   </tr>
                 )}
 
-                {rowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
+                {activeMetrics.length > 0 && rowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
                   <tr className="total-row">
                     <td><strong>Общий итог</strong></td>
 
                     {pivotCols.map(col => (
                       <React.Fragment key={`${col.key}-grand`}>
-                        {metrics.map(metric => (
+                        {activeMetrics.map(metric => (
                           <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
                             <strong>{formatValue(calculateColTotal(col, metric.key))}</strong>
                           </td>
@@ -1475,10 +1701,10 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                   </tr>
                 )}
 
-                {rowFields.length && !visibleNodes.length && (
+                {activeMetrics.length > 0 && !isLoading && rowFields.length && !visibleNodes.length && (
                   <tr>
                     <td
-                      colSpan={1 + pivotCols.length * Math.max(metrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
                     >
                       <div className="empty">Нет данных для выбранных фильтров.</div>
                     </td>
