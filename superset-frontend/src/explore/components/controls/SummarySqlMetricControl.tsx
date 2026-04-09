@@ -26,15 +26,29 @@ type Option = {
 
 type SummarySqlMetricControlProps = {
   metric?: string;
+  subtotalMode?: string;
+  totalMode?: string;
   subtotalSql?: string;
   totalSql?: string;
   metricOptions?: Option[];
   onChange: (value: {
     metric?: string;
+    subtotalMode?: string;
+    totalMode?: string;
     subtotalSql?: string;
     totalSql?: string;
   }) => void;
 };
+
+const MODE_OPTIONS: Option[] = [
+  { value: 'default', label: t('Как метрика') },
+  { value: 'sum', label: 'SUM' },
+  { value: 'avg', label: 'AVG' },
+  { value: 'min', label: 'MIN' },
+  { value: 'max', label: 'MAX' },
+  { value: 'count', label: 'COUNT' },
+  { value: 'custom_sql', label: t('Свой SQL') },
+];
 
 const Root = styled.div`
   display: grid;
@@ -64,6 +78,8 @@ const Hint = styled.div`
 
 export default function SummarySqlMetricControl({
   metric,
+  subtotalMode = 'default',
+  totalMode = 'default',
   subtotalSql,
   totalSql,
   metricOptions = [],
@@ -79,6 +95,8 @@ export default function SummarySqlMetricControl({
           onChange={(value: any) =>
             onChange({
               metric: value?.value ?? value,
+              subtotalMode,
+              totalMode,
               subtotalSql,
               totalSql,
             })
@@ -91,38 +109,74 @@ export default function SummarySqlMetricControl({
       </Row>
 
       <Row>
-        <Label>{t('Формула подытога')}</Label>
-        <Input
-          value={subtotalSql}
-          onChange={event =>
+        <Label>{t('Как считать подытог')}</Label>
+        <Select
+          value={subtotalMode}
+          options={MODE_OPTIONS}
+          onChange={(value: any) =>
             onChange({
               metric,
-              subtotalSql: event.currentTarget.value,
+              subtotalMode: value?.value ?? value,
+              totalMode,
+              subtotalSql,
               totalSql,
             })
           }
-          placeholder={t('Например: SUM(sales). Используется для промежуточных итогов по уровням')}
+          placeholder={t('Выберите способ расчета')}
         />
+        {subtotalMode === 'custom_sql' ? (
+          <Input
+            value={subtotalSql}
+            onChange={event =>
+              onChange({
+                metric,
+                subtotalMode,
+                totalMode,
+                subtotalSql: event.currentTarget.value,
+                totalSql,
+              })
+            }
+            placeholder={t('Например: AVG(margin)')}
+          />
+        ) : null}
         <Hint>
-          {t('Эта формула применяется к подытогам при сворачивании и раскрытии иерархии.')}
+          {t('Используется для промежуточных итогов по уровням. Если нужен нестандартный расчет, выберите "Свой SQL".')}
         </Hint>
       </Row>
 
       <Row>
-        <Label>{t('Формула общего итога')}</Label>
-        <Input
-          value={totalSql}
-          onChange={event =>
+        <Label>{t('Как считать общий итог')}</Label>
+        <Select
+          value={totalMode}
+          options={MODE_OPTIONS}
+          onChange={(value: any) =>
             onChange({
               metric,
+              subtotalMode,
+              totalMode: value?.value ?? value,
               subtotalSql,
-              totalSql: event.currentTarget.value,
+              totalSql,
             })
           }
-          placeholder={t('Например: AVG(margin). Используется для итоговой строки всей таблицы')}
+          placeholder={t('Выберите способ расчета')}
         />
+        {totalMode === 'custom_sql' ? (
+          <Input
+            value={totalSql}
+            onChange={event =>
+              onChange({
+                metric,
+                subtotalMode,
+                totalMode,
+                subtotalSql,
+                totalSql: event.currentTarget.value,
+              })
+            }
+            placeholder={t('Например: SUM(sales)')}
+          />
+        ) : null}
         <Hint>
-          {t('Эта формула применяется только к финальной строке общего итога таблицы.')}
+          {t('Применяется только к финальной строке общего итога таблицы.')}
         </Hint>
       </Row>
     </Root>

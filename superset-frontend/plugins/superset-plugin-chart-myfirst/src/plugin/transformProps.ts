@@ -52,6 +52,7 @@ type MetricDef = {
   key: string;
   label: string;
   candidates?: string[];
+  queryMetric?: any;
 };
 
 type ConditionalFormattingRule = {
@@ -65,6 +66,8 @@ type ConditionalFormattingRule = {
 
 type MetricSummarySqlRule = {
   metric?: string;
+  subtotalMode?: string;
+  totalMode?: string;
   subtotalSql?: string;
   totalSql?: string;
 };
@@ -149,11 +152,14 @@ function buildMetricDef(metric: any, dataColumnNames: string[]): MetricDef {
     key: matchedKey ?? candidates[0] ?? label,
     label,
     candidates,
+    queryMetric: metric,
   };
 }
 
 export default function transformProps(chartProps: ChartProps) {
   const { width, height, formData, queriesData } = chartProps;
+  const ownState = (chartProps as any).ownState;
+  const filterState = (chartProps as any).filterState;
   const rawRecords = queriesData[0]?.data || [];
 
   const groupbyRowsRaw = parseArray((formData as any).groupbyRows);
@@ -236,6 +242,8 @@ export default function transformProps(chartProps: ChartProps) {
     height,
     data: rawRecords,
     formData,
+    ownState,
+    filterState,
     rows,
     columns,
     metrics,

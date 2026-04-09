@@ -177,6 +177,17 @@ const config: ControlPanelConfig = {
             },
           },
           {
+            name: 'row_limit',
+            config: {
+              ...sharedControls.row_limit,
+              label: t('Лимит строк runtime-запроса'),
+              description: t('Максимум строк, которые можно получить для построения таблицы после нажатия "Применить"'),
+              default: 100000,
+            },
+          },
+        ],
+        [
+          {
             name: 'null_label',
             config: {
               type: 'TextControl',
@@ -200,6 +211,8 @@ const config: ControlPanelConfig = {
               addTooltip: t('Добавить формулу для метрики'),
               itemGenerator: () => ({
                 metric: undefined,
+                subtotalMode: 'default',
+                totalMode: 'default',
                 subtotalSql: '',
                 totalSql: '',
               }),
@@ -258,9 +271,8 @@ const config: ControlPanelConfig = {
           {
             name: 'headerBg',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Фон заголовка'),
-              description: t('Например: #203247'),
               default: '#203247',
               renderTrigger: true,
             },
@@ -268,9 +280,8 @@ const config: ControlPanelConfig = {
           {
             name: 'headerTextColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет текста заголовка'),
-              description: t('Например: #ffffff'),
               default: '#ffffff',
               renderTrigger: true,
             },
@@ -280,9 +291,8 @@ const config: ControlPanelConfig = {
           {
             name: 'grandTotalBg',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Фон общего итога'),
-              description: t('Например: #203247'),
               default: '#203247',
               renderTrigger: true,
             },
@@ -290,9 +300,8 @@ const config: ControlPanelConfig = {
           {
             name: 'expandColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет иконки раскрытия'),
-              description: t('Например: #64748b'),
               default: '#64748b',
               renderTrigger: true,
             },
@@ -302,9 +311,8 @@ const config: ControlPanelConfig = {
           {
             name: 'subtotalBg',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Фон подытогов'),
-              description: t('Например: #f6fafe'),
               default: '#f6fafe',
               renderTrigger: true,
             },
@@ -312,9 +320,8 @@ const config: ControlPanelConfig = {
           {
             name: 'cellTextColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет текста ячеек'),
-              description: t('Например: #0f172a'),
               default: '#0f172a',
               renderTrigger: true,
             },
@@ -324,9 +331,8 @@ const config: ControlPanelConfig = {
           {
             name: 'heatmapPositiveColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет heatmap для положительных'),
-              description: t('Например: #22c55e'),
               default: '#22c55e',
               renderTrigger: true,
             },
@@ -334,9 +340,8 @@ const config: ControlPanelConfig = {
           {
             name: 'heatmapNegativeColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет heatmap для отрицательных'),
-              description: t('Например: #ef4444'),
               default: '#ef4444',
               renderTrigger: true,
             },
@@ -346,9 +351,8 @@ const config: ControlPanelConfig = {
           {
             name: 'barPositiveColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет полосы для положительных'),
-              description: t('Например: #22c55e'),
               default: '#22c55e',
               renderTrigger: true,
             },
@@ -356,9 +360,8 @@ const config: ControlPanelConfig = {
           {
             name: 'barNegativeColor',
             config: {
-              type: 'TextControl',
+              type: 'ColorPickerControl',
               label: t('Цвет полосы для отрицательных'),
-              description: t('Например: #ef4444'),
               default: '#ef4444',
               renderTrigger: true,
             },

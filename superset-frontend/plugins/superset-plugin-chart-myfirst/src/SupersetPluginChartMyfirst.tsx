@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { styled } from '@superset-ui/core';
+import { styled, SupersetClient } from '@superset-ui/core';
+import { buildRuntimePivotQueryContext } from './plugin/buildQuery';
 
 const HEADER_ROW_HEIGHT = 42;
 const FIRST_COL_WIDTH = 360;
@@ -35,6 +36,7 @@ type MetricDef = {
   key: string;
   label: string;
   candidates?: string[];
+  queryMetric?: any;
 };
 
 type ConditionalFormattingRule = {
@@ -50,6 +52,8 @@ type NodeAgg = Record<string, Record<string, number>>;
 
 type MetricSummarySqlRule = {
   metric?: string;
+  subtotalMode?: string;
+  totalMode?: string;
   subtotalSql?: string;
   totalSql?: string;
 };
@@ -69,6 +73,14 @@ type LoadedNode = {
 type Props = {
   data: any[];
   formData?: any;
+  hooks?: {
+    setDataMask?: (dataMask: Record<string, any>) => void;
+    setControlValue?: (
+      controlName: string,
+      value: any,
+      validationErrors?: any[],
+    ) => void;
+  };
   rows?: FieldDef[];
   columns?: FieldDef[];
   metrics?: MetricDef[];
@@ -123,6 +135,18 @@ type MetricSelectorProps = {
   onToggle: (metricKey: string) => void;
 };
 
+type ChartDataResult = {
+  data: any[];
+  colnames: string[];
+  coltypes?: any[];
+};
+
+type PersistedSelection = {
+  rowFieldKeys?: string[];
+  columnFieldKeys?: string[];
+  metricKeys?: string[];
+};
+
 const Styles = styled.div<StyleProps>`
   width: 100%;
   height: 100%;
@@ -135,9 +159,7 @@ const Styles = styled.div<StyleProps>`
     display: flex;
     flex-direction: row;
     height: 100%;
-    background:
-      radial-gradient(circle at top right, rgba(59, 130, 246, 0.08), transparent 28%),
-      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    background: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.25);
     border-radius: 18px;
     overflow: hidden;
@@ -176,7 +198,7 @@ const Styles = styled.div<StyleProps>`
 
   .sidebar-actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
   }
 
@@ -193,6 +215,7 @@ const Styles = styled.div<StyleProps>`
     height: 100%;
     display: flex;
     flex-direction: column;
+    background: #fff;
   }
 
   .panel {
@@ -235,6 +258,53 @@ const Styles = styled.div<StyleProps>`
   .btn:hover {
     background: #f8fafc;
     border-color: rgba(148, 163, 184, 0.65);
+  }
+
+  .btn:disabled {
+    cursor: default;
+    opacity: 0.55;
+    background: #f8fafc;
+    border-color: rgba(226, 232, 240, 1);
+  }
+
+  .runtime-warning {
+    margin: 0 16px 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 12px;
+    background: rgba(255, 251, 235, 0.92);
+    color: #92400e;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .runtime-query {
+    margin: 0 16px 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 12px;
+    background: #f8fafc;
+  }
+
+  .runtime-query summary {
+    cursor: pointer;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+    list-style: none;
+  }
+
+  .runtime-query summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .runtime-query pre {
+    margin: 10px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #0f172a;
   }
 
   .field-list {
@@ -383,7 +453,7 @@ const Styles = styled.div<StyleProps>`
     text-align: left;
     border: 1px solid rgba(148, 163, 184, 0.34);
     border-radius: 12px;
-    background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    background: #fff;
     padding: 10px 12px;
     font-size: 12px;
     color: #0f172a;
@@ -499,7 +569,7 @@ const Styles = styled.div<StyleProps>`
     min-height: 0;
     flex: 1 1 auto;
     overflow: auto;
-    background: rgba(255,255,255,0.82);
+    background: #fff;
     position: relative;
     z-index: 1;
   }
@@ -512,7 +582,7 @@ const Styles = styled.div<StyleProps>`
   }
 
   thead th {
-    background: linear-gradient(180deg, ${({ headerBg }) => headerBg || '#203247'} 0%, #304a66 100%);
+    background: ${({ headerBg }) => headerBg || '#203247'};
     color: ${({ headerTextColor }) => headerTextColor || '#fff'};
     padding: 10px 12px;
     font-weight: 700;
@@ -591,7 +661,7 @@ const Styles = styled.div<StyleProps>`
   }
 
   .total-row td {
-    background: linear-gradient(180deg, ${({ grandTotalBg }) => grandTotalBg || '#203247'} 0%, #304a66 100%);
+    background: ${({ grandTotalBg }) => grandTotalBg || '#203247'};
     color: #fff;
     font-weight: 800;
     border-right: 1px solid rgba(255,255,255,0.08);
@@ -626,6 +696,20 @@ function normalizeValue(value: any, nullLabel: string) {
 function getFieldRawValue(record: Record<string, any>, field: FieldDef) {
   const candidateKeys = Array.from(
     new Set([field.queryKey, field.key, ...(field.candidates || []), field.label].filter(Boolean)),
+  );
+
+  for (const candidate of candidateKeys) {
+    if (Object.prototype.hasOwnProperty.call(record, candidate)) {
+      return record[candidate];
+    }
+  }
+
+  return undefined;
+}
+
+function getMetricRawValue(record: Record<string, any>, metric: MetricDef) {
+  const candidateKeys = Array.from(
+    new Set([metric.key, metric.label, ...(metric.candidates || [])].filter(Boolean)),
   );
 
   for (const candidate of candidateKeys) {
@@ -765,6 +849,45 @@ function buildSqlMetric(label: string, sqlExpression: string) {
   };
 }
 
+function inferSummaryMode(
+  rule: MetricSummarySqlRule | undefined,
+  kind: 'subtotal' | 'total',
+) {
+  const explicitMode = kind === 'subtotal' ? rule?.subtotalMode : rule?.totalMode;
+  if (explicitMode) return explicitMode;
+
+  const sql = (kind === 'subtotal' ? rule?.subtotalSql : rule?.totalSql)?.trim();
+  if (!sql) return 'default';
+
+  const normalized = sql.toUpperCase();
+  if (normalized.startsWith('SUM(')) return 'sum';
+  if (normalized.startsWith('AVG(')) return 'avg';
+  if (normalized.startsWith('MIN(')) return 'min';
+  if (normalized.startsWith('MAX(')) return 'max';
+  if (normalized.startsWith('COUNT(')) return 'count';
+  return 'default';
+}
+
+function applySummaryMode(values: number[], mode: string) {
+  if (!values.length) return 0;
+
+  switch (mode) {
+    case 'avg':
+      return values.reduce((sum, value) => sum + value, 0) / values.length;
+    case 'min':
+      return Math.min(...values);
+    case 'max':
+      return Math.max(...values);
+    case 'count':
+      return values.length;
+    case 'sum':
+    case 'custom_sql':
+    case 'default':
+    default:
+      return values.reduce((sum, value) => sum + value, 0);
+  }
+}
+
 function formatPivotColumnLabel(col: PivotCol, columnFields: FieldDef[]) {
   if (!columnFields.length) return 'Значение';
   const values = col.values || [];
@@ -788,6 +911,49 @@ function arraysEqual(a: FieldDef[] = [], b: FieldDef[] = []) {
   return true;
 }
 
+function metricKeysEqual(a: string[] = [], b: string[] = []) {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function getSelectionStorageKey(formData?: Record<string, any>) {
+  const sliceId = formData?.slice_id ?? formData?.sliceId;
+  const datasource = formData?.datasource;
+  const datasourceId =
+    typeof datasource === 'string'
+      ? datasource
+      : datasource?.id ?? datasource?.value ?? datasource?.datasource_id;
+  const resolvedKey = sliceId ?? datasourceId;
+  return resolvedKey ? `myfirst-pivot-selection:${resolvedKey}` : undefined;
+}
+
+function loadPersistedSelection(storageKey?: string): PersistedSelection | null {
+  if (!storageKey || typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistSelection(storageKey: string | undefined, selection: PersistedSelection) {
+  if (!storageKey || typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(selection));
+  } catch {
+    // Ignore storage errors in embedded/private contexts.
+  }
+}
+
 function serializePathValue(value: any) {
   if (value === null) return 'null:';
   if (value === undefined) return 'undefined:';
@@ -807,6 +973,8 @@ function aggregateNode(
   colFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
+  metricSummaryMap: Record<string, MetricSummarySqlRule> = {},
+  kind: 'subtotal' | 'total' = 'subtotal',
 ): { cols: PivotCol[]; agg: NodeAgg } {
   const colsMap = new Map<string, PivotCol>();
   const agg: NodeAgg = {};
@@ -824,7 +992,7 @@ function aggregateNode(
     if (!agg[colKey]) agg[colKey] = {};
 
     metrics.forEach(metric => {
-      const raw = item[metric.key];
+      const raw = getMetricRawValue(item, metric);
       const num =
         typeof raw === 'number'
           ? raw
@@ -889,7 +1057,7 @@ function buildLoadedNodes(
       const rawPathValues = [...parentRawPathValues, rawValue];
       const pathValues = [...parentPathValues, name];
       const pathKey = pathToKey(rawPathValues);
-      const { agg } = aggregateNode(rows, columnFields, metrics, nullLabel);
+      const { agg } = aggregateNode(rows, columnFields, metrics, nullLabel, {}, 'subtotal');
       const hasChildren = level < rowFields.length - 1;
 
       return {
@@ -911,6 +1079,7 @@ function buildHierarchyState(
   columnFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
+  metricSummaryRules: MetricSummarySqlRule[],
 ) {
   const nodesByPath: Record<string, LoadedNode> = {};
   const childrenByParent: Record<string, string[]> = {
@@ -950,7 +1119,14 @@ function buildHierarchyState(
         const rawPathValues = [...parentRawPathValues, rawValue];
         const pathValues = [...parentPathValues, name];
         const pathKey = pathToKey(rawPathValues);
-        const { agg } = aggregateNode(groupedRows, columnFields, metrics, nullLabel);
+        const { agg } = aggregateNode(
+          groupedRows,
+          columnFields,
+          metrics,
+          nullLabel,
+          {},
+          'subtotal',
+        );
         const hasChildren = level < rowFields.length - 1;
 
         const node: LoadedNode = {
@@ -980,7 +1156,14 @@ function buildHierarchyState(
     visit(records, ROOT_NODE_KEY);
   }
 
-  const totals = aggregateNode(records, columnFields, metrics, nullLabel);
+  const totals = aggregateNode(
+    records,
+    columnFields,
+    metrics,
+    nullLabel,
+    {},
+    'total',
+  );
 
   return {
     nodesByPath,
@@ -988,6 +1171,75 @@ function buildHierarchyState(
     pivotCols: totals.cols,
     grandAgg: totals.agg,
   };
+}
+
+function normalizeFetchedRecords(
+  records: any[],
+  colnames: string[],
+  rowFields: FieldDef[],
+  columnFields: FieldDef[],
+  metrics: MetricDef[],
+) {
+  if (!records.length || !colnames.length) return records;
+
+  const dimensions = [...rowFields, ...columnFields];
+  const availableColnames = [...colnames];
+
+  const pickMatchingColname = (candidates: string[]) => {
+    const normalizedCandidates = candidates.map(candidate => candidate.trim().toLowerCase());
+    const matched = availableColnames.find(col =>
+      normalizedCandidates.includes(col.trim().toLowerCase()),
+    );
+    if (!matched) return undefined;
+    availableColnames.splice(availableColnames.indexOf(matched), 1);
+    return matched;
+  };
+
+  const dimensionSourceKeys = dimensions.map(field =>
+    pickMatchingColname(
+      Array.from(
+        new Set([field.queryKey, field.key, ...(field.candidates || []), field.label].filter(Boolean)),
+      ),
+    ),
+  );
+
+  const metricSourceKeys = metrics.map(metric =>
+    pickMatchingColname(
+      Array.from(
+        new Set([metric.key, metric.label, ...(metric.candidates || [])].filter(Boolean)),
+      ),
+    ),
+  );
+
+  return records.map(record => {
+    const nextRecord = { ...record };
+
+    dimensions.forEach((field, index) => {
+      const sourceKey = dimensionSourceKeys[index];
+      if (!sourceKey || !Object.prototype.hasOwnProperty.call(record, sourceKey)) return;
+      [field.queryKey, field.key, ...(field.candidates || []), field.label]
+        .filter(Boolean)
+        .forEach(targetKey => {
+          if (!Object.prototype.hasOwnProperty.call(nextRecord, targetKey)) {
+            nextRecord[targetKey] = record[sourceKey];
+          }
+        });
+    });
+
+    metrics.forEach((metric, index) => {
+      const sourceKey = metricSourceKeys[index];
+      if (!sourceKey || !Object.prototype.hasOwnProperty.call(record, sourceKey)) return;
+      [metric.key, metric.label, ...(metric.candidates || [])]
+        .filter(Boolean)
+        .forEach(targetKey => {
+          if (!Object.prototype.hasOwnProperty.call(nextRecord, targetKey)) {
+            nextRecord[targetKey] = record[sourceKey];
+          }
+        });
+    });
+
+    return nextRecord;
+  });
 }
 
 function FilterDropdown({ label, options, selected, onChange }: FilterDropdownProps) {
@@ -1121,6 +1373,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   const {
     data = [],
     formData,
+    hooks,
     rows = [],
     columns = [],
     metrics = [],
@@ -1173,13 +1426,75 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return Array.from(map.values());
   }, [selectableDimensions, rows, columns]);
 
+  const selectionStorageKey = useMemo(() => getSelectionStorageKey(formData), [formData]);
+
   const [rowFields, setRowFields] = useState<FieldDef[]>(rows || []);
   const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
   const [activeMetricKeys, setActiveMetricKeys] = useState<string[]>(defaultMetricKeys);
+  const [appliedRowFields, setAppliedRowFields] = useState<FieldDef[]>(rows || []);
+  const [appliedColumnFields, setAppliedColumnFields] = useState<FieldDef[]>(columns || []);
+  const [appliedMetricKeys, setAppliedMetricKeys] = useState<string[]>(defaultMetricKeys);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [queryData, setQueryData] = useState<any[]>([]);
+  const [runtimeQuery, setRuntimeQuery] = useState('');
+  const [isRuntimeRowLimitReached, setIsRuntimeRowLimitReached] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const requestVersionRef = useRef(0);
+  const [selectionRestored, setSelectionRestored] = useState(false);
 
   const lastExternalRowsRef = useRef<FieldDef[]>(rows || []);
   const lastExternalColumnsRef = useRef<FieldDef[]>(columns || []);
+
+  useEffect(() => {
+    setSelectionRestored(false);
+  }, [selectionStorageKey]);
+
+  useEffect(() => {
+    if (selectionRestored) return;
+
+    const persisted = loadPersistedSelection(selectionStorageKey);
+    if (!persisted) {
+      setSelectionRestored(true);
+      return;
+    }
+
+    const fieldMap = new Map(availableDimensions.map(field => [field.key, field]));
+    const metricMap = new Map(metrics.map(metric => [metric.key, metric]));
+
+    const restoredRows = (persisted.rowFieldKeys || [])
+      .map(key => fieldMap.get(key))
+      .filter((field): field is FieldDef => Boolean(field));
+    const restoredColumns = (persisted.columnFieldKeys || [])
+      .map(key => fieldMap.get(key))
+      .filter((field): field is FieldDef => Boolean(field));
+    const restoredMetricKeys = (persisted.metricKeys || []).filter(metricKey => metricMap.has(metricKey));
+
+    if (restoredRows.length || restoredColumns.length || restoredMetricKeys.length) {
+      setRowFields(restoredRows.length ? restoredRows : rows || []);
+      setColumnFields(restoredColumns.length ? restoredColumns : columns || []);
+      setAppliedRowFields(restoredRows.length ? restoredRows : rows || []);
+      setAppliedColumnFields(restoredColumns.length ? restoredColumns : columns || []);
+
+      const fallbackMetricKeys = defaultMetricKeys.filter(metricKey => metricMap.has(metricKey));
+      const nextMetricKeys = restoredMetricKeys.length
+        ? restoredMetricKeys
+        : fallbackMetricKeys.length
+          ? fallbackMetricKeys
+          : metrics.map(metric => metric.key);
+      setActiveMetricKeys(nextMetricKeys);
+      setAppliedMetricKeys(nextMetricKeys);
+    }
+
+    setSelectionRestored(true);
+  }, [
+    selectionRestored,
+    selectionStorageKey,
+    availableDimensions,
+    metrics,
+    rows,
+    columns,
+    defaultMetricKeys,
+  ]);
 
   useEffect(() => {
     const nextRows = rows || [];
@@ -1191,6 +1506,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     if (rowsChanged || columnsChanged) {
       setRowFields(nextRows);
       setColumnFields(nextColumns);
+      setAppliedRowFields(nextRows);
+      setAppliedColumnFields(nextColumns);
       setExpanded(new Set());
       lastExternalRowsRef.current = [...nextRows];
       lastExternalColumnsRef.current = [...nextColumns];
@@ -1205,6 +1522,12 @@ export default function SupersetPluginChartMyfirst(props: Props) {
       const defaultKeys = defaultMetricKeys.filter(metricKey => nextMetricKeys.includes(metricKey));
       return defaultKeys.length ? defaultKeys : nextMetricKeys;
     });
+    setAppliedMetricKeys(prev => {
+      const filtered = prev.filter(metricKey => nextMetricKeys.includes(metricKey));
+      if (filtered.length) return filtered;
+      const defaultKeys = defaultMetricKeys.filter(metricKey => nextMetricKeys.includes(metricKey));
+      return defaultKeys.length ? defaultKeys : nextMetricKeys;
+    });
   }, [metrics, defaultMetricKeys]);
 
   const activeMetrics = useMemo(
@@ -1212,9 +1535,91 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     [metrics, activeMetricKeys],
   );
 
+  const appliedMetrics = useMemo(
+    () => metrics.filter(metric => appliedMetricKeys.includes(metric.key)),
+    [metrics, appliedMetricKeys],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
+
+    const refreshData = async () => {
+      if (
+        !formData ||
+        !appliedMetrics.length ||
+        (!appliedRowFields.length && !appliedColumnFields.length)
+      ) {
+        setQueryData([]);
+        setRuntimeQuery('');
+        setIsRuntimeRowLimitReached(false);
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const queryContext = buildRuntimePivotQueryContext(formData, {
+          ownState: {
+            pivotSelection: {
+              rowFields: appliedRowFields.map(field => field.queryField || field.queryKey || field.key),
+              columnFields: appliedColumnFields.map(
+                field => field.queryField || field.queryKey || field.key,
+              ),
+              metricKeys: appliedMetrics.map(metric => metric.key),
+            },
+          },
+        });
+        const { json } = await SupersetClient.post({
+          endpoint: '/api/v1/myfirst_pivot/data',
+          jsonPayload: {
+            form_data: formData,
+            query_context: queryContext,
+          },
+        });
+
+        const result = (json as any)?.result as ChartDataResult | undefined;
+        const fetchedData = Array.isArray(result?.data) ? result.data : [];
+        const runtimeRowLimit = Number((queryContext as any)?.queries?.[0]?.row_limit ?? 0);
+        if (!cancelled && requestVersionRef.current === requestVersion) {
+          setQueryData(fetchedData);
+          setRuntimeQuery(typeof (result as any)?.query === 'string' ? (result as any).query : '');
+          setIsRuntimeRowLimitReached(
+            Boolean(runtimeRowLimit) && fetchedData.length >= runtimeRowLimit,
+          );
+        }
+      } catch {
+        if (!cancelled && requestVersionRef.current === requestVersion) {
+          setQueryData([]);
+          setRuntimeQuery('');
+          setIsRuntimeRowLimitReached(false);
+        }
+      } finally {
+        if (!cancelled && requestVersionRef.current === requestVersion) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void refreshData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formData, appliedRowFields, appliedColumnFields, appliedMetrics]);
+
   const hierarchyState = useMemo(
-    () => buildHierarchyState(data, rowFields, columnFields, activeMetrics, nullLabel),
-    [data, rowFields, columnFields, activeMetrics, nullLabel],
+    () =>
+      buildHierarchyState(
+        queryData,
+        appliedRowFields,
+        appliedColumnFields,
+        appliedMetrics,
+        nullLabel,
+        metricSummarySql,
+      ),
+    [queryData, appliedRowFields, appliedColumnFields, appliedMetrics, nullLabel, metricSummarySql],
   );
 
   const { nodesByPath, childrenByParent, pivotCols, grandAgg } = hierarchyState;
@@ -1236,8 +1641,6 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   useEffect(() => {
     setExpanded(new Set(defaultExpanded));
   }, [defaultExpanded]);
-
-  const isLoading = false;
 
   const visibleNodes = useMemo(() => {
     const result: LoadedNode[] = [];
@@ -1261,7 +1664,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   const metricRanges = useMemo(() => {
     const ranges: Record<string, { min: number; max: number; maxAbs: number }> = {};
 
-    activeMetrics.forEach(metric => {
+    appliedMetrics.forEach(metric => {
       const vals: number[] = [];
 
       visibleNodes.forEach(node => {
@@ -1283,7 +1686,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     });
 
     return ranges;
-  }, [activeMetrics, visibleNodes, pivotCols]);
+  }, [appliedMetrics, visibleNodes, pivotCols]);
 
   const formatValue = (value: any) => {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
@@ -1304,7 +1707,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     Object.keys(node.hasChildren && node.subtotalAgg ? node.subtotalAgg : node.agg).reduce(
       (sum, colKey) =>
         sum +
-        activeMetrics.reduce(
+        appliedMetrics.reduce(
           (metricSum, metric) =>
             metricSum +
             ((node.hasChildren && node.subtotalAgg ? node.subtotalAgg[colKey]?.[metric.key] : node.agg[colKey]?.[metric.key]) || 0),
@@ -1319,7 +1722,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     Object.keys(grandAgg).reduce(
       (sum, colKey) =>
         sum +
-        activeMetrics.reduce(
+        appliedMetrics.reduce(
           (metricSum, metric) => metricSum + (grandAgg[colKey]?.[metric.key] || 0),
           0,
         ),
@@ -1417,9 +1820,28 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     handlePlacementChange(field, placement);
   };
 
+  const hasPendingChanges = useMemo(() => {
+    if (!arraysEqual(rowFields, appliedRowFields)) return true;
+    if (!arraysEqual(columnFields, appliedColumnFields)) return true;
+    return !metricKeysEqual(activeMetricKeys, appliedMetricKeys);
+  }, [rowFields, appliedRowFields, columnFields, appliedColumnFields, activeMetricKeys, appliedMetricKeys]);
+
+  const applySelection = () => {
+    setAppliedRowFields(rowFields);
+    setAppliedColumnFields(columnFields);
+    setAppliedMetricKeys(activeMetricKeys);
+    setExpanded(new Set());
+    persistSelection(selectionStorageKey, {
+      rowFieldKeys: rowFields.map(field => field.key),
+      columnFieldKeys: columnFields.map(field => field.key),
+      metricKeys: activeMetricKeys,
+    });
+  };
+
   const clearFilters = () => {
     setActiveMetricKeys(metrics.map(metric => metric.key));
-    setExpanded(new Set());
+    setRowFields(rows || []);
+    setColumnFields(columns || []);
   };
 
   const expandAll = () => {
@@ -1440,7 +1862,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     if (value === null || value === undefined || Number.isNaN(value)) return {};
     const style: React.CSSProperties = {};
     const range = metricRanges[metricKey];
-    const metricDef = activeMetrics.find(metric => metric.key === metricKey);
+    const metricDef = appliedMetrics.find(metric => metric.key === metricKey);
     const applicableConditionalRules = conditionalFormatting.filter(rule => {
       const column = rule.column?.trim().toLowerCase();
       if (!column) return false;
@@ -1470,10 +1892,11 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     }
 
     if (showCellBars && range?.maxAbs > 0) {
-      const widthPercent = Math.min((Math.abs(value) / range.maxAbs) * 100, 100);
-      const barColor = withAlpha(value < 0 ? barNegativeColor : barPositiveColor, 0.14);
-      style.backgroundImage = `linear-gradient(90deg, ${barColor} ${widthPercent}%, transparent ${widthPercent}%)`;
-      style.backgroundBlendMode = 'multiply';
+      const barColor = value < 0 ? barNegativeColor : barPositiveColor;
+      style.boxShadow = `inset 3px 0 0 ${barColor}`;
+      if (!style.backgroundColor) {
+        style.backgroundColor = withAlpha(barColor, 0.08);
+      }
     }
 
     const matchedRule = [...applicableConditionalRules]
@@ -1486,7 +1909,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
         style.backgroundColor = colors.backgroundColor;
         style.color = colors.color;
         style.fontWeight = 700;
-        style.backgroundImage = 'none';
+        style.boxShadow = 'none';
       }
     }
 
@@ -1515,7 +1938,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
 
           {pivotCols.map(col => (
             <React.Fragment key={col.key}>
-              {activeMetrics.map(metric => {
+              {appliedMetrics.map(metric => {
                 const value = getNodeAggValue(node, col.key, metric.key);
                 return (
                   <td
@@ -1580,11 +2003,29 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           <div className="sidebar-header">
             <div className="sidebar-title">Поля</div>
             <div className="sidebar-actions">
+              <button className="btn" onClick={applySelection} disabled={!hasPendingChanges || isLoading}>
+                Применить
+              </button>
               <button className="btn" onClick={expandAll}>Все</button>
               <button className="btn" onClick={collapseAll}>Свернуть</button>
               <button className="btn" onClick={clearFilters}>Сброс</button>
             </div>
           </div>
+
+          {runtimeQuery ? (
+            <details className="runtime-query">
+              <summary>Примененный SQL</summary>
+              <pre>{runtimeQuery}</pre>
+            </details>
+          ) : null}
+
+          {isRuntimeRowLimitReached ? (
+            <div className="runtime-warning">
+              Результат уперся в ограничение по строкам runtime-запроса. Таблица может
+              быть построена не по всем группам. Уменьшите число выбранных полей или
+              увеличьте `row_limit` для чарта.
+            </div>
+          ) : null}
 
           <div className="sidebar-scroll">
             <div className="panel">
@@ -1627,33 +2068,35 @@ export default function SupersetPluginChartMyfirst(props: Props) {
               <thead>
                 <tr>
                   <th className="sticky-first">
-                    {rowFields.length ? rowFields.map(field => field.label).join(' → ') : 'Строки'}
+                    {appliedRowFields.length
+                      ? appliedRowFields.map(field => field.label).join(' → ')
+                      : 'Строки'}
                   </th>
 
-                  {activeMetrics.length > 0 && pivotCols.map(col => (
-                    <th key={col.key} colSpan={activeMetrics.length}>
-                      {formatPivotColumnLabel(col, columnFields)}
+                  {appliedMetrics.length > 0 && pivotCols.map(col => (
+                    <th key={col.key} colSpan={appliedMetrics.length}>
+                      {formatPivotColumnLabel(col, appliedColumnFields)}
                     </th>
                   ))}
 
-                  {activeMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
+                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
                 </tr>
 
                 <tr>
                   <th className="sticky-first" />
-                  {activeMetrics.length > 0 && pivotCols.map(col => (
+                  {appliedMetrics.length > 0 && pivotCols.map(col => (
                     <React.Fragment key={`${col.key}-metric`}>
-                      {activeMetrics.map(metric => (
+                      {appliedMetrics.map(metric => (
                         <th key={`${col.key}-${metric.key}`}>{metric.label}</th>
                       ))}
                     </React.Fragment>
                   ))}
-                  {activeMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
+                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
                 </tr>
               </thead>
 
               <tbody>
-                {!activeMetrics.length ? (
+                {!appliedMetrics.length ? (
                   <tr>
                     <td colSpan={1}>
                       <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
@@ -1662,30 +2105,30 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                 ) : isLoading ? (
                   <tr>
                     <td
-                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
                     >
                       <div className="table-placeholder">Загрузка агрегированных данных...</div>
                     </td>
                   </tr>
-                ) : rowFields.length ? (
+                ) : appliedRowFields.length ? (
                   renderRows()
                 ) : (
                   <tr>
                     <td
-                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
                     >
                       <div className="table-placeholder">Выберите хотя бы одно поле в строки или столбцы.</div>
                     </td>
                   </tr>
                 )}
 
-                {activeMetrics.length > 0 && rowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
+                {appliedMetrics.length > 0 && appliedRowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
                   <tr className="total-row">
                     <td><strong>Общий итог</strong></td>
 
                     {pivotCols.map(col => (
                       <React.Fragment key={`${col.key}-grand`}>
-                        {activeMetrics.map(metric => (
+                        {appliedMetrics.map(metric => (
                           <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
                             <strong>{formatValue(calculateColTotal(col, metric.key))}</strong>
                           </td>
@@ -1701,10 +2144,10 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                   </tr>
                 )}
 
-                {activeMetrics.length > 0 && !isLoading && rowFields.length && !visibleNodes.length && (
+                {appliedMetrics.length > 0 && !isLoading && appliedRowFields.length && !visibleNodes.length && (
                   <tr>
                     <td
-                      colSpan={1 + pivotCols.length * Math.max(activeMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
+                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
                     >
                       <div className="empty">Нет данных для выбранных фильтров.</div>
                     </td>

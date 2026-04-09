@@ -100,15 +100,30 @@ class CeleryConfig:
 
 CELERY_CONFIG = CeleryConfig
 
+def env_as_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Настройки WebSocket и асинхронных запросов
 FEATURE_FLAGS = {
     "ALERT_REPORTS": True,
-    "GLOBAL_ASYNC_QUERIES": True,  # Включаем глобальные асинхронные запросы
+    # В dev под WSL websocket часто недоступен по тому же origin, что и UI.
+    # Поэтому async-запросы выключены по умолчанию и включаются через env.
+    "GLOBAL_ASYNC_QUERIES": env_as_bool("FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES", False),
 }
-SECRET_KEY="lJnVzyWI4saSVawWX8TV/bVqReMTPXdR+U2SR4x6/L7Q1h+XQcUJok0a"
-# Транспорт для асинхронных запросов (используем WebSocket)
-GLOBAL_ASYNC_QUERIES_TRANSPORT = "ws"
-GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL = "ws://localhost/ws"
+SECRET_KEY = "lJnVzyWI4saSVawWX8TV/bVqReMTPXdR+U2SR4x6/L7Q1h+XQcUJok0a"
+# По умолчанию используем polling, а websocket оставляем опциональным через env.
+GLOBAL_ASYNC_QUERIES_TRANSPORT = os.getenv(
+    "GLOBAL_ASYNC_QUERIES_TRANSPORT",
+    "polling",
+)
+GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL = os.getenv(
+    "GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL",
+    "ws://localhost:8080/ws",
+)
 
 # JWT настройки для аутентификации WebSocket
 GLOBAL_ASYNC_QUERIES_JWT_SECRET = os.getenv(

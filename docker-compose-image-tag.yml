@@ -1,4 +1,4 @@
-x-superset-image: &superset-image custom_superset:0.2.4
+x-superset-image: &superset-image custom_superset:0.3.0
 x-superset-volumes:
   &superset-volumes # /app/pythonpath_docker will be appended to the PYTHONPATH in the final container
   - ./docker:/app/docker
@@ -31,6 +31,11 @@ services:
         required: true
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES: ${FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES:-false}
+      GLOBAL_ASYNC_QUERIES_TRANSPORT: ${GLOBAL_ASYNC_QUERIES_TRANSPORT:-polling}
+      GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL: ${GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL:-ws://localhost:8080/ws}
+      GLOBAL_ASYNC_QUERIES_JWT_SECRET: ${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      REDIS_WEBSOCKET_DB: ${REDIS_WEBSOCKET_DB:-2}
     image: *superset-image
     container_name: superset_app
     command: ["/app/docker/docker-bootstrap.sh", "app-gunicorn"]
@@ -71,6 +76,12 @@ services:
         required: true
       - path: docker/.env-local # optional override
         required: false
+    environment:
+      FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES: ${FEATURE_FLAGS_GLOBAL_ASYNC_QUERIES:-false}
+      GLOBAL_ASYNC_QUERIES_TRANSPORT: ${GLOBAL_ASYNC_QUERIES_TRANSPORT:-polling}
+      GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL: ${GLOBAL_ASYNC_QUERIES_WEBSOCKET_URL:-ws://localhost:8080/ws}
+      GLOBAL_ASYNC_QUERIES_JWT_SECRET: ${GLOBAL_ASYNC_QUERIES_JWT_SECRET:-CHANGE_ME_TO_A_COMPLEX_SECRET_AT_LEAST_32_CHARS}
+      REDIS_WEBSOCKET_DB: ${REDIS_WEBSOCKET_DB:-2}
     restart: unless-stopped
     depends_on:
       superset-init:

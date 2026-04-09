@@ -172,6 +172,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         from superset.explore.form_data.api import ExploreFormDataRestApi
         from superset.explore.permalink.api import ExplorePermalinkRestApi
         from superset.importexport.api import ImportExportRestApi
+        from superset.myfirst.api import MyFirstPivotRestApi
         from superset.queries.api import QueryRestApi
         from superset.queries.saved_queries.api import SavedQueryRestApi
         from superset.reports.api import ReportScheduleRestApi
@@ -268,6 +269,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         appbuilder.add_api(SqlLabRestApi)
         appbuilder.add_api(SqlLabPermalinkRestApi)
         appbuilder.add_api(LogRestApi)
+        appbuilder.add_api(MyFirstPivotRestApi)
         #
         # Setup regular views
         #
