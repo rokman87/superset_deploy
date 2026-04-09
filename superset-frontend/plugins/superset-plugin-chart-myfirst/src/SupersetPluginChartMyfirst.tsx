@@ -73,6 +73,8 @@ type LoadedNode = {
 type Props = {
   data: any[];
   formData?: any;
+  ownState?: Record<string, any>;
+  filterState?: Record<string, any>;
   hooks?: {
     setDataMask?: (dataMask: Record<string, any>) => void;
     setControlValue?: (
@@ -854,9 +856,11 @@ function inferSummaryMode(
   kind: 'subtotal' | 'total',
 ) {
   const explicitMode = kind === 'subtotal' ? rule?.subtotalMode : rule?.totalMode;
-  if (explicitMode) return explicitMode;
-
   const sql = (kind === 'subtotal' ? rule?.subtotalSql : rule?.totalSql)?.trim();
+
+  if (explicitMode && explicitMode !== 'custom_sql') return explicitMode;
+  if (explicitMode === 'custom_sql' && !sql) return 'custom_sql';
+
   if (!sql) return 'default';
 
   const normalized = sql.toUpperCase();
@@ -865,7 +869,7 @@ function inferSummaryMode(
   if (normalized.startsWith('MIN(')) return 'min';
   if (normalized.startsWith('MAX(')) return 'max';
   if (normalized.startsWith('COUNT(')) return 'count';
-  return 'default';
+  return explicitMode === 'custom_sql' ? 'custom_sql' : 'default';
 }
 
 function applySummaryMode(values: number[], mode: string) {
@@ -886,6 +890,19 @@ function applySummaryMode(values: number[], mode: string) {
     default:
       return values.reduce((sum, value) => sum + value, 0);
   }
+}
+
+function getMetricSummaryRule(
+  metric: MetricDef,
+  metricSummaryMap: Record<string, MetricSummarySqlRule>,
+) {
+  return (
+    metricSummaryMap[metric.key] ||
+    metricSummaryMap[metric.label] ||
+    (metric.candidates || [])
+      .map(candidate => metricSummaryMap[candidate])
+      .find(Boolean)
+  );
 }
 
 function formatPivotColumnLabel(col: PivotCol, columnFields: FieldDef[]) {
@@ -999,7 +1016,10 @@ function aggregateNode(
           : raw === null || raw === undefined || raw === ''
             ? 0
             : Number(raw) || 0;
-      agg[colKey][metric.key] = (agg[colKey][metric.key] || 0) + num;
+      if (!Array.isArray((agg[colKey] as any)[`${metric.key}__values`])) {
+        (agg[colKey] as any)[`${metric.key}__values`] = [];
+      }
+      (agg[colKey] as any)[`${metric.key}__values`].push(num);
     });
   });
 
@@ -1010,6 +1030,22 @@ function aggregateNode(
   if (!cols.length) {
     cols.push({ key: 'Значение', values: ['Значение'] });
   }
+
+  cols.forEach(col => {
+    if (!agg[col.key]) {
+      agg[col.key] = {};
+    }
+
+    metrics.forEach(metric => {
+      const values = Array.isArray((agg[col.key] as any)[`${metric.key}__values`])
+        ? ((agg[col.key] as any)[`${metric.key}__values`] as number[])
+        : [];
+      const rule = getMetricSummaryRule(metric, metricSummaryMap);
+      const mode = inferSummaryMode(rule, kind);
+      agg[col.key][metric.key] = applySummaryMode(values, mode);
+      delete (agg[col.key] as any)[`${metric.key}__values`];
+    });
+  });
 
   return { cols, agg };
 }
@@ -1085,6 +1121,15 @@ function buildHierarchyState(
   const childrenByParent: Record<string, string[]> = {
     [ROOT_NODE_KEY]: [],
   };
+  const metricSummaryMap = metricSummaryRules.reduce<Record<string, MetricSummarySqlRule>>(
+    (acc, rule) => {
+      if (rule.metric) {
+        acc[rule.metric] = rule;
+      }
+      return acc;
+    },
+    {},
+  );
 
   const visit = (
     levelRecords: any[],
@@ -1124,7 +1169,7 @@ function buildHierarchyState(
           columnFields,
           metrics,
           nullLabel,
-          {},
+          metricSummaryMap,
           'subtotal',
         );
         const hasChildren = level < rowFields.length - 1;
@@ -1161,7 +1206,7 @@ function buildHierarchyState(
     columnFields,
     metrics,
     nullLabel,
-    {},
+    metricSummaryMap,
     'total',
   );
 
@@ -1373,6 +1418,8 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   const {
     data = [],
     formData,
+    ownState,
+    filterState,
     hooks,
     rows = [],
     columns = [],
@@ -1427,6 +1474,17 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   }, [selectableDimensions, rows, columns]);
 
   const selectionStorageKey = useMemo(() => getSelectionStorageKey(formData), [formData]);
+  const runtimeFilterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        extra_form_data: formData?.extra_form_data || null,
+        extra_filters: formData?.extra_filters || null,
+        adhoc_filters: formData?.adhoc_filters || null,
+        ownState: ownState || null,
+        filterState: filterState || null,
+      }),
+    [formData, ownState, filterState],
+  );
 
   const [rowFields, setRowFields] = useState<FieldDef[]>(rows || []);
   const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
@@ -1607,7 +1665,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     return () => {
       cancelled = true;
     };
-  }, [formData, appliedRowFields, appliedColumnFields, appliedMetrics]);
+  }, [formData, runtimeFilterSignature, data, appliedRowFields, appliedColumnFields, appliedMetrics]);
 
   const hierarchyState = useMemo(
     () =>
@@ -2006,24 +2064,24 @@ export default function SupersetPluginChartMyfirst(props: Props) {
               <button className="btn" onClick={applySelection} disabled={!hasPendingChanges || isLoading}>
                 Применить
               </button>
-              <button className="btn" onClick={expandAll}>Все</button>
+              <button className="btn" onClick={expandAll}>Развернуть</button>
               <button className="btn" onClick={collapseAll}>Свернуть</button>
               <button className="btn" onClick={clearFilters}>Сброс</button>
             </div>
           </div>
 
-          {runtimeQuery ? (
+          {/* {runtimeQuery ? (
             <details className="runtime-query">
               <summary>Примененный SQL</summary>
               <pre>{runtimeQuery}</pre>
             </details>
-          ) : null}
+          ) : null} */}
 
           {isRuntimeRowLimitReached ? (
             <div className="runtime-warning">
-              Результат уперся в ограничение по строкам runtime-запроса. Таблица может
+              Результат уперся в ограничение по строкам запроса. Таблица может
               быть построена не по всем группам. Уменьшите число выбранных полей или
-              увеличьте `row_limit` для чарта.
+              скорректируйте фильтры для чарта.
             </div>
           ) : null}
 

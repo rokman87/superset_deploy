@@ -78,8 +78,39 @@ function compactString(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+function rgbObjectToHex(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+
+  const rgb = value as {
+    r?: unknown;
+    g?: unknown;
+    b?: unknown;
+    a?: unknown;
+  };
+
+  if (
+    typeof rgb.r !== 'number' ||
+    typeof rgb.g !== 'number' ||
+    typeof rgb.b !== 'number'
+  ) {
+    return undefined;
+  }
+
+  const toHex = (channel: number) => {
+    const normalized = Math.max(0, Math.min(255, Math.round(channel)));
+    return normalized.toString(16).padStart(2, '0');
+  };
+
+  const base = `#${toHex(rgb.r)}${toHex(rgb.g)}${toHex(rgb.b)}`;
+  if (typeof rgb.a !== 'number' || rgb.a >= 1) {
+    return base;
+  }
+
+  return `${base}${toHex(rgb.a * 255)}`;
+}
+
 function compactColor(value: unknown, fallback?: string): string | undefined {
-  const resolved = compactString(value);
+  const resolved = compactString(value) ?? rgbObjectToHex(value);
   return resolved ?? fallback;
 }
 
@@ -157,26 +188,36 @@ function buildMetricDef(metric: any, dataColumnNames: string[]): MetricDef {
 }
 
 export default function transformProps(chartProps: ChartProps) {
-  const { width, height, formData, queriesData } = chartProps;
+  const { width, height, formData, queriesData, rawFormData } = chartProps as ChartProps & {
+    rawFormData?: Record<string, any>;
+  };
   const ownState = (chartProps as any).ownState;
   const filterState = (chartProps as any).filterState;
   const rawRecords = queriesData[0]?.data || [];
+  const effectiveFormData = {
+    ...(rawFormData || formData || {}),
+    ...(((rawFormData as any)?.extra_form_data || {}) as Record<string, any>),
+    ...(((rawFormData as any)?.extraFormData || {}) as Record<string, any>),
+    ...(formData || {}),
+    ...(((formData as any)?.extra_form_data || {}) as Record<string, any>),
+    ...(((formData as any)?.extraFormData || {}) as Record<string, any>),
+  } as Record<string, any>;
 
-  const groupbyRowsRaw = parseArray((formData as any).groupbyRows);
-  const groupbyColumnsRaw = parseArray((formData as any).groupbyColumns);
-  const selectableDimensionsRaw = parseArray((formData as any).selectableDimensions);
+  const groupbyRowsRaw = parseArray((effectiveFormData as any).groupbyRows);
+  const groupbyColumnsRaw = parseArray((effectiveFormData as any).groupbyColumns);
+  const selectableDimensionsRaw = parseArray((effectiveFormData as any).selectableDimensions);
 
   const dataColumnNames: string[] = Array.isArray((queriesData[0] as any)?.colnames)
     ? ((queriesData[0] as any).colnames as unknown[]).map(String)
     : Object.keys(rawRecords[0] || {});
 
-  const metricsRaw = (Array.isArray((formData as any).metrics)
-    ? (formData as any).metrics
-    : [(formData as any).metrics]
+  const metricsRaw = (Array.isArray((effectiveFormData as any).metrics)
+    ? (effectiveFormData as any).metrics
+    : [(effectiveFormData as any).metrics]
   ).filter(Boolean);
-  const selectableMetricsRaw = (Array.isArray((formData as any).selectableMetrics)
-    ? (formData as any).selectableMetrics
-    : [(formData as any).selectableMetrics]
+  const selectableMetricsRaw = (Array.isArray((effectiveFormData as any).selectableMetrics)
+    ? (effectiveFormData as any).selectableMetrics
+    : [(effectiveFormData as any).selectableMetrics]
   ).filter(Boolean);
 
   const rows = groupbyRowsRaw.map(field => buildFieldDef(field, dataColumnNames));
@@ -233,7 +274,8 @@ export default function transformProps(chartProps: ChartProps) {
         : true);
 
   const resolvedShowSidebar = parseBoolean(
-    (formData as any).myfirst_show_sidebar ?? (formData as any).myfirstShowSidebar,
+    (effectiveFormData as any).myfirst_show_sidebar ??
+      (effectiveFormData as any).myfirstShowSidebar,
     true,
   );
 
@@ -241,7 +283,7 @@ export default function transformProps(chartProps: ChartProps) {
     width,
     height,
     data: rawRecords,
-    formData,
+    formData: effectiveFormData,
     ownState,
     filterState,
     rows,
@@ -254,46 +296,53 @@ export default function transformProps(chartProps: ChartProps) {
     myfirstShowSidebar: resolvedShowSidebar,
 
     showSubtotals: parseBoolean(
-      (formData as any).showSubtotals ?? (formData as any).show_subtotals,
+      (effectiveFormData as any).showSubtotals ?? (effectiveFormData as any).show_subtotals,
       true,
     ),
     showGrandTotals,
     showRowTotals,
     showColumnTotals,
     showCellBars: parseBoolean(
-      (formData as any).showCellBars ?? (formData as any).show_cell_bars,
+      (effectiveFormData as any).showCellBars ?? (effectiveFormData as any).show_cell_bars,
       true,
     ),
     showHeatmap: parseBoolean(
-      (formData as any).showHeatmap ?? (formData as any).show_heatmap,
+      (effectiveFormData as any).showHeatmap ?? (effectiveFormData as any).show_heatmap,
       true,
     ),
     compactDisplay: parseBoolean(
-      (formData as any).compactDisplay ?? (formData as any).compact_display,
+      (effectiveFormData as any).compactDisplay ??
+        (effectiveFormData as any).compact_display,
       false,
     ),
     defaultExpandDepth: Number(
-      (formData as any).defaultExpandDepth ?? (formData as any).default_expand_depth ?? 0,
+      (effectiveFormData as any).defaultExpandDepth ??
+        (effectiveFormData as any).default_expand_depth ??
+        0,
     ),
     numberFormatDigits: Number(
-      (formData as any).numberFormatDigits ?? (formData as any).number_format_digits ?? 2,
+      (effectiveFormData as any).numberFormatDigits ??
+        (effectiveFormData as any).number_format_digits ??
+        2,
     ),
-    nullLabel: String((formData as any).nullLabel ?? (formData as any).null_label ?? '—'),
-    headerBg: compactColor((formData as any).headerBg),
-    headerTextColor: compactColor((formData as any).headerTextColor),
-    grandTotalBg: compactColor((formData as any).grandTotalBg),
-    expandColor: compactColor((formData as any).expandColor),
-    subtotalBg: compactColor((formData as any).subtotalBg),
-    cellTextColor: compactColor((formData as any).cellTextColor),
-    heatmapPositiveColor: compactColor((formData as any).heatmapPositiveColor),
-    heatmapNegativeColor: compactColor((formData as any).heatmapNegativeColor),
-    barPositiveColor: compactColor((formData as any).barPositiveColor),
-    barNegativeColor: compactColor((formData as any).barNegativeColor),
-    conditionalFormatting: Array.isArray((formData as any).conditional_formatting)
-      ? ((formData as any).conditional_formatting as ConditionalFormattingRule[])
+    nullLabel: String(
+      (effectiveFormData as any).nullLabel ?? (effectiveFormData as any).null_label ?? '—',
+    ),
+    headerBg: compactColor((effectiveFormData as any).headerBg),
+    headerTextColor: compactColor((effectiveFormData as any).headerTextColor),
+    grandTotalBg: compactColor((effectiveFormData as any).grandTotalBg),
+    expandColor: compactColor((effectiveFormData as any).expandColor),
+    subtotalBg: compactColor((effectiveFormData as any).subtotalBg),
+    cellTextColor: compactColor((effectiveFormData as any).cellTextColor),
+    heatmapPositiveColor: compactColor((effectiveFormData as any).heatmapPositiveColor),
+    heatmapNegativeColor: compactColor((effectiveFormData as any).heatmapNegativeColor),
+    barPositiveColor: compactColor((effectiveFormData as any).barPositiveColor),
+    barNegativeColor: compactColor((effectiveFormData as any).barNegativeColor),
+    conditionalFormatting: Array.isArray((effectiveFormData as any).conditional_formatting)
+      ? ((effectiveFormData as any).conditional_formatting as ConditionalFormattingRule[])
       : [],
-    metricSummarySql: Array.isArray((formData as any).metricSummarySql)
-      ? ((formData as any).metricSummarySql as MetricSummarySqlRule[])
+    metricSummarySql: Array.isArray((effectiveFormData as any).metricSummarySql)
+      ? ((effectiveFormData as any).metricSummarySql as MetricSummarySqlRule[])
       : [],
   };
 }
