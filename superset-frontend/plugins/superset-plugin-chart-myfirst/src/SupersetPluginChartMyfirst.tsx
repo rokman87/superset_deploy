@@ -262,6 +262,20 @@ const Styles = styled.div<StyleProps>`
     border-color: rgba(148, 163, 184, 0.65);
   }
 
+  .btn.btn-apply-active {
+    background: ${({ headerBg }) => headerBg || '#203247'};
+    border-color: ${({ headerBg }) => headerBg || '#203247'};
+    color: ${({ headerTextColor }) => headerTextColor || '#fff'};
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  }
+
+  .btn.btn-apply-active:hover {
+    background: ${({ headerBg }) => headerBg || '#203247'};
+    border-color: ${({ headerBg }) => headerBg || '#203247'};
+    color: ${({ headerTextColor }) => headerTextColor || '#fff'};
+    filter: brightness(1.05);
+  }
+
   .btn:disabled {
     cursor: default;
     opacity: 0.55;
@@ -910,6 +924,14 @@ function formatPivotColumnLabel(col: PivotCol, columnFields: FieldDef[]) {
   const values = col.values || [];
   return columnFields
     .map((field, index) => `${field.label}: ${values[index] ?? '—'}`)
+    .join(' | ');
+}
+
+function formatPivotColumnValues(col: PivotCol, columnFields: FieldDef[]) {
+  if (!columnFields.length) return 'Значение';
+  const values = col.values || [];
+  return columnFields
+    .map((_, index) => values[index] ?? '—')
     .join(' | ');
 }
 
@@ -2061,7 +2083,11 @@ export default function SupersetPluginChartMyfirst(props: Props) {
           <div className="sidebar-header">
             <div className="sidebar-title">Поля</div>
             <div className="sidebar-actions">
-              <button className="btn" onClick={applySelection} disabled={!hasPendingChanges || isLoading}>
+              <button
+                className={`btn ${hasPendingChanges && !isLoading ? 'btn-apply-active' : ''}`}
+                onClick={applySelection}
+                disabled={!hasPendingChanges || isLoading}
+              >
                 Применить
               </button>
               <button className="btn" onClick={expandAll}>Развернуть</button>
@@ -2131,13 +2157,25 @@ export default function SupersetPluginChartMyfirst(props: Props) {
                       : 'Строки'}
                   </th>
 
-                  {appliedMetrics.length > 0 && pivotCols.map(col => (
-                    <th key={col.key} colSpan={appliedMetrics.length}>
-                      {formatPivotColumnLabel(col, appliedColumnFields)}
+                  {appliedMetrics.length > 0 && (
+                    <th colSpan={pivotCols.length * appliedMetrics.length}>
+                      {appliedColumnFields.length
+                        ? appliedColumnFields.map(field => field.label).join(' → ')
+                        : 'Значение'}
                     </th>
-                  ))}
+                  )}
 
                   {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
+                </tr>
+
+                <tr>
+                  <th className="sticky-first" />
+                  {appliedMetrics.length > 0 && pivotCols.map(col => (
+                    <th key={`${col.key}-values`} colSpan={appliedMetrics.length}>
+                      {formatPivotColumnValues(col, appliedColumnFields)}
+                    </th>
+                  ))}
+                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
                 </tr>
 
                 <tr>
