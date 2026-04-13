@@ -90,7 +90,7 @@ type Props = {
   selectableDimensions?: FieldDef[];
   metricSummarySql?: MetricSummarySqlRule[];
   showSidebar?: boolean | string | number;
-  myfirstShowSidebar?: boolean | string | number;
+  customPivotTableShowSidebar?: boolean | string | number;
   showSubtotals?: boolean;
   showGrandTotals?: boolean;
   showRowTotals?: boolean;
@@ -967,7 +967,7 @@ function getSelectionStorageKey(formData?: Record<string, any>) {
       ? datasource
       : datasource?.id ?? datasource?.value ?? datasource?.datasource_id;
   const resolvedKey = sliceId ?? datasourceId;
-  return resolvedKey ? `myfirst-pivot-selection:${resolvedKey}` : undefined;
+  return resolvedKey ? `custom-pivot-table-selection:${resolvedKey}` : undefined;
 }
 
 function loadPersistedSelection(storageKey?: string): PersistedSelection | null {
@@ -1436,7 +1436,7 @@ function MetricSelector({ metrics, activeMetricKeys, onToggle }: MetricSelectorP
   );
 }
 
-export default function SupersetPluginChartMyfirst(props: Props) {
+export default function CustomPivotTable(props: Props) {
   const {
     data = [],
     formData,
@@ -1449,7 +1449,7 @@ export default function SupersetPluginChartMyfirst(props: Props) {
     defaultMetricKeys = [],
     selectableDimensions = [],
     showSidebar: rawShowSidebar,
-    myfirstShowSidebar: rawMyfirstShowSidebar,
+    customPivotTableShowSidebar: rawCustomPivotTableShowSidebar,
     showSubtotals = true,
     showGrandTotals = true,
     showRowTotals = true,
@@ -1477,10 +1477,12 @@ export default function SupersetPluginChartMyfirst(props: Props) {
   } = props;
 
   const resolvedShowSidebar = useMemo(() => {
-    if (rawMyfirstShowSidebar !== undefined) return toBoolean(rawMyfirstShowSidebar, true);
+    if (rawCustomPivotTableShowSidebar !== undefined) {
+      return toBoolean(rawCustomPivotTableShowSidebar, true);
+    }
     if (rawShowSidebar !== undefined) return toBoolean(rawShowSidebar, true);
     return true;
-  }, [rawMyfirstShowSidebar, rawShowSidebar]);
+  }, [rawCustomPivotTableShowSidebar, rawShowSidebar]);
 
   const availableDimensions = useMemo(() => {
     const merged = [...(selectableDimensions || []), ...(rows || []), ...(columns || [])];

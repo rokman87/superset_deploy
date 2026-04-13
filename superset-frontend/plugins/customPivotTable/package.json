@@ -1,5 +1,5 @@
 {
-  "name": "superset-plugin-chart-myfirst",
+  "name": "custom-pivot-table",
   "version": "0.1.0",
   "description": "SQL-based pivot table with drill down",
   "main": "lib/index.js",

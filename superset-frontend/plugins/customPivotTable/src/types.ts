@@ -16,28 +16,25 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import {
-  QueryFormData,
-  TimeseriesDataRecord,
-} from '@superset-ui/core';
+import { QueryFormData, TimeseriesDataRecord } from '@superset-ui/core';
 
-export interface SupersetPluginChartMyfirstStylesProps {
+interface CustomPivotTableCustomizeProps {
+  headerText: string;
+}
+
+export interface CustomPivotTableStylesProps {
   height: number;
   width: number;
   headerFontSize: 'fontSizeSM' | 'fontSize' | 'fontSizeLG' | 'fontSizeXL' | 'fontSizeHeading1' | 'fontSizeHeading2' | 'fontSizeHeading3' | 'fontSizeHeading4' | 'fontSizeHeading5';
   boldText: boolean;
 }
 
-interface SupersetPluginChartMyfirstCustomizeProps {
-  headerText: string;
-}
+export type CustomPivotTableQueryFormData = QueryFormData &
+  CustomPivotTableStylesProps &
+  CustomPivotTableCustomizeProps;
 
-export type SupersetPluginChartMyfirstQueryFormData = QueryFormData &
-  SupersetPluginChartMyfirstStylesProps &
-  SupersetPluginChartMyfirstCustomizeProps;
-
-export type SupersetPluginChartMyfirstProps = SupersetPluginChartMyfirstStylesProps &
-  SupersetPluginChartMyfirstCustomizeProps & {
+export type CustomPivotTableProps = CustomPivotTableStylesProps &
+  CustomPivotTableCustomizeProps & {
     data: TimeseriesDataRecord[];
     // add typing here for the props you pass in from transformProps.ts!
   };

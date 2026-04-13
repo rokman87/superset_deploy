@@ -22,8 +22,6 @@ import {
   Preset,
   VizType,
 } from '@superset-ui/core';
-import SupersetPluginChartMyfirst from '../../../plugins/superset-plugin-chart-myfirst/src';
-import CustomFiltersModdedChartPlugin from '../../../plugins/customFiltersModded/src';
 import CalendarChartPlugin from '@superset-ui/legacy-plugin-chart-calendar';
 import ChordChartPlugin from '@superset-ui/legacy-plugin-chart-chord';
 import CountryMapChartPlugin from '@superset-ui/legacy-plugin-chart-country-map';
@@ -84,6 +82,13 @@ import { HandlebarsChartPlugin } from '@superset-ui/plugin-chart-handlebars';
 import { FilterPlugins } from 'src/constants';
 import AgGridTableChartPlugin from '@superset-ui/plugin-chart-ag-grid-table';
 import TimeTableChartPlugin from '../TimeTable';
+import CustomFiltersModdedChartPlugin from '../../../plugins/customFiltersModded/src';
+import CustomMixedTimeseriesChartPlugin, {
+  CUSTOM_MIXED_TIMESERIES_VIZ_TYPE,
+} from '../../../plugins/customMixedTimeseries/src';
+import CustomPivotTableChartPlugin, {
+  CUSTOM_PIVOT_TABLE_VIZ_TYPE,
+} from '../../../plugins/customPivotTable/src';
 
 export default class MainPreset extends Preset {
   constructor() {
@@ -109,8 +114,15 @@ export default class MainPreset extends Preset {
         new BigNumberTotalChartPlugin().configure({
           key: VizType.BigNumberTotal,
         }),
-        new CustomFiltersModdedChartPlugin().configure({ key: 'customFiltersModded' }),
-        new SupersetPluginChartMyfirst().configure({ key: 'newTableNik' }),
+        new CustomFiltersModdedChartPlugin().configure({
+          key: 'customFiltersModded',
+        }),
+        new CustomPivotTableChartPlugin().configure({
+          key: CUSTOM_PIVOT_TABLE_VIZ_TYPE,
+        }),
+        new CustomMixedTimeseriesChartPlugin().configure({
+          key: CUSTOM_MIXED_TIMESERIES_VIZ_TYPE,
+        }),
         new EchartsBoxPlotChartPlugin().configure({ key: VizType.BoxPlot }),
         new BubbleChartPlugin().configure({ key: VizType.LegacyBubble }),
         new BulletChartPlugin().configure({ key: VizType.Bullet }),

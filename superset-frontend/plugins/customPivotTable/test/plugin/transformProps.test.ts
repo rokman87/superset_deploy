@@ -16,19 +16,38 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import buildQuery from '../../src/plugin/buildQuery';
+import { ChartProps, supersetTheme } from '@superset-ui/core';
+import transformProps from '../../src/plugin/transformProps';
 
-describe('SupersetPluginChartMyfirst buildQuery', () => {
+describe('CustomPivotTable transformProps', () => {
   const formData = {
-    datasource: '5__table',
+    colorScheme: 'bnbColors',
+    datasource: '3__table',
     granularity_sqla: 'ds',
-    series: 'foo',
-    viz_type: 'my_chart',
+    metric: 'sum__num',
+    series: 'name',
+    boldText: true,
+    headerFontSize: 'xs',
+    headerText: 'my text',
   };
+  const chartProps = new ChartProps({
+    formData,
+    width: 800,
+    height: 600,
+    theme: supersetTheme,
+    queriesData: [{
+      data: [{ name: 'Hulk', sum__num: 1 }],
+    }],
+  });
 
-  it('should build groupby with series in form data', () => {
-    const queryContext = buildQuery(formData);
-    const [query] = queryContext.queries;
-    expect(query.columns).toEqual(['foo']);
+  it('should transform chart props for viz', () => {
+    expect(transformProps(chartProps)).toEqual({
+      width: 800,
+      height: 600,
+      boldText: true,
+      headerFontSize: 'xs',
+      headerText: 'my text',
+      data: [{ name: 'Hulk', sum__num: 1 }],
+    });
   });
 });

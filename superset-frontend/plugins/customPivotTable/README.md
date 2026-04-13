@@ -1,4 +1,4 @@
-# superset-plugin-chart-myfirst
+# customPivotTable
 
 This is the Superset Plugin Chart Myfirst Superset Chart Plugin.
 
@@ -17,9 +17,9 @@ Alternatively, to run the plugin in development mode (=rebuilding whenever chang
 npm run dev
 ```
 
-To add the package to Superset, go to the `superset-frontend` subdirectory in your Superset source folder (assuming both the `superset-plugin-chart-myfirst` plugin and `superset` repos are in the same root directory) and run
+To add the package to Superset, go to the `superset-frontend` subdirectory in your Superset source folder (assuming both the `customPivotTable` plugin and `superset` repos are in the same root directory) and run
 ```
-npm i -S ../../superset-plugin-chart-myfirst
+npm i -S ../../customPivotTable
 ```
 
 If your Superset plugin exists in the `superset-frontend` directory and you wish to resolve TypeScript errors about `@superset-ui/core` not being resolved correctly, add the following to your `tsconfig.json` file:
@@ -50,12 +50,12 @@ Finally, if you wish to ensure your plugin `tsconfig.json` is aligned with the r
 After this edit the `superset-frontend/src/visualizations/presets/MainPreset.js` and make the following changes:
 
 ```js
-import { SupersetPluginChartMyfirst } from 'superset-plugin-chart-myfirst';
+import CustomPivotTableChartPlugin from 'custom-pivot-table';
 ```
 
 to import the plugin and later add the following to the array that's passed to the `plugins` property:
 ```js
-new SupersetPluginChartMyfirst().configure({ key: 'superset-plugin-chart-myfirst' }),
+new CustomPivotTableChartPlugin().configure({ key: 'customPivotTable' }),
 ```
 
 After that the plugin should show up when you run Superset, e.g. the development server:

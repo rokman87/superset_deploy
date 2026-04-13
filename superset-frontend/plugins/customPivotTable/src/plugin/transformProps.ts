@@ -274,8 +274,8 @@ export default function transformProps(chartProps: ChartProps) {
         : true);
 
   const resolvedShowSidebar = parseBoolean(
-    (effectiveFormData as any).myfirst_show_sidebar ??
-      (effectiveFormData as any).myfirstShowSidebar,
+    (effectiveFormData as any).custom_pivot_table_show_sidebar ??
+      (effectiveFormData as any).customPivotTableShowSidebar,
     true,
   );
 
@@ -293,7 +293,7 @@ export default function transformProps(chartProps: ChartProps) {
     selectableDimensions,
 
     showSidebar: resolvedShowSidebar,
-    myfirstShowSidebar: resolvedShowSidebar,
+    customPivotTableShowSidebar: resolvedShowSidebar,
 
     showSubtotals: parseBoolean(
       (effectiveFormData as any).showSubtotals ?? (effectiveFormData as any).show_subtotals,
