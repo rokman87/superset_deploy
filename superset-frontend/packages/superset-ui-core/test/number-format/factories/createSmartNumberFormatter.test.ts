@@ -30,15 +30,18 @@ describe('createSmartNumberFormatter(options)', () => {
       expect(formatter(0)).toBe('0');
     });
     describe('for positive numbers', () => {
-      it('formats billion with B in stead of G', () => {
-        expect(formatter(1000000000)).toBe('1B');
-        expect(formatter(4560000000)).toBe('4.56B');
+      it('formats large values with Russian suffixes', () => {
+        expect(formatter(1000)).toBe('1 тыс');
+        expect(formatter(111000000)).toBe('111 млн');
+        expect(formatter(1000000000)).toBe('1 млрд');
+        expect(formatter(4560000000)).toBe('4.56 млрд');
+        expect(formatter(1000000000000)).toBe('1 трлн');
       });
-      it('formats numbers that are >= 1,000 & <= 1,000,000,000 as SI format with precision 3', () => {
-        expect(formatter(1000)).toBe('1k');
-        expect(formatter(10001)).toBe('10k');
-        expect(formatter(10100)).toBe('10.1k');
-        expect(formatter(111000000)).toBe('111M');
+      it('formats numbers that are >= 1,000 & <= 1,000,000,000 with SI precision 3 and localized suffixes', () => {
+        expect(formatter(1000)).toBe('1 тыс');
+        expect(formatter(10001)).toBe('10 тыс');
+        expect(formatter(10100)).toBe('10.1 тыс');
+        expect(formatter(111000000)).toBe('111 млн');
       });
       it('formats number that are >= 1 & < 1,000 as integer or float with at most 2 decimal points', () => {
         expect(formatter(1)).toBe('1');
@@ -66,15 +69,18 @@ describe('createSmartNumberFormatter(options)', () => {
       });
     });
     describe('for negative numbers', () => {
-      it('formats billion with B in stead of G', () => {
-        expect(formatter(-1000000000)).toBe('-1B');
-        expect(formatter(-4560000000)).toBe('-4.56B');
+      it('formats large negative values with Russian suffixes', () => {
+        expect(formatter(-1000)).toBe('-1 тыс');
+        expect(formatter(-111000000)).toBe('-111 млн');
+        expect(formatter(-1000000000)).toBe('-1 млрд');
+        expect(formatter(-4560000000)).toBe('-4.56 млрд');
+        expect(formatter(-1000000000000)).toBe('-1 трлн');
       });
-      it('formats numbers that are >= 1,000 & <= 1,000,000,000 as SI format with precision 3', () => {
-        expect(formatter(-1000)).toBe('-1k');
-        expect(formatter(-10001)).toBe('-10k');
-        expect(formatter(-10100)).toBe('-10.1k');
-        expect(formatter(-111000000)).toBe('-111M');
+      it('formats numbers that are >= 1,000 & <= 1,000,000,000 with SI precision 3 and localized suffixes', () => {
+        expect(formatter(-1000)).toBe('-1 тыс');
+        expect(formatter(-10001)).toBe('-10 тыс');
+        expect(formatter(-10100)).toBe('-10.1 тыс');
+        expect(formatter(-111000000)).toBe('-111 млн');
       });
       it('formats number that are >= 1 & < 1,000 as integer or float with at most 2 decimal points', () => {
         expect(formatter(-1)).toBe('-1');
@@ -109,15 +115,18 @@ describe('createSmartNumberFormatter(options)', () => {
       expect(formatter(0)).toBe('0');
     });
     describe('for positive numbers', () => {
-      it('formats billion with B in stead of G', () => {
-        expect(formatter(1000000000)).toBe('+1B');
-        expect(formatter(4560000000)).toBe('+4.56B');
+      it('formats large values with Russian suffixes', () => {
+        expect(formatter(1000)).toBe('+1 тыс');
+        expect(formatter(111000000)).toBe('+111 млн');
+        expect(formatter(1000000000)).toBe('+1 млрд');
+        expect(formatter(4560000000)).toBe('+4.56 млрд');
+        expect(formatter(1000000000000)).toBe('+1 трлн');
       });
-      it('formats numbers that are >= 1,000 & <= 1,000,000,000 as SI format with precision 3', () => {
-        expect(formatter(1000)).toBe('+1k');
-        expect(formatter(10001)).toBe('+10k');
-        expect(formatter(10100)).toBe('+10.1k');
-        expect(formatter(111000000)).toBe('+111M');
+      it('formats numbers that are >= 1,000 & <= 1,000,000,000 with SI precision 3 and localized suffixes', () => {
+        expect(formatter(1000)).toBe('+1 тыс');
+        expect(formatter(10001)).toBe('+10 тыс');
+        expect(formatter(10100)).toBe('+10.1 тыс');
+        expect(formatter(111000000)).toBe('+111 млн');
       });
       it('formats number that are >= 1 & < 1,000 as integer or float with at most 2 decimal points', () => {
         expect(formatter(1)).toBe('+1');

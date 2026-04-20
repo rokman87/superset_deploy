@@ -421,7 +421,8 @@ LANGUAGES = {}
 #     "decimal": ".",           # - decimal place string (e.g., ".").
 #     "thousands": ",",         # - group separator string (e.g., ",").
 #     "grouping": [3],          # - array of group sizes (e.g., [3]), cycled as needed.
-#     "currency": ["$", ""]     # - currency prefix/suffix strings (e.g., ["$", ""])
+#     "currency": ["$", ""],    # - currency prefix/suffix strings (e.g., ["$", ""])
+#     "suffixes": ["", "k", "M", "G", "T", "P", "E", "Z", "Y"]
 # }
 # https://github.com/d3/d3-format/blob/main/README.md#formatLocale
 class D3Format(TypedDict, total=False):
@@ -429,6 +430,7 @@ class D3Format(TypedDict, total=False):
     thousands: str
     grouping: list[int]
     currency: list[str]
+    suffixes: list[str]
 
 
 D3_FORMAT: D3Format = {}

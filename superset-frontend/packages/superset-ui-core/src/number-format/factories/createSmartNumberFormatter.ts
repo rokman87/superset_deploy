@@ -24,6 +24,28 @@ import NumberFormats from '../NumberFormats';
 const siFormatter = d3Format(`.3~s`);
 const float2PointFormatter = d3Format(`.2~f`);
 const float4PointFormatter = d3Format(`.4~f`);
+const SMART_NUMBER_SUFFIXES: Record<string, string> = {
+  k: ' тыс',
+  M: ' млн',
+  G: ' млрд',
+  T: ' трлн',
+  P: ' квадрлн',
+  E: ' квинтлн',
+  Z: ' секстлн',
+  Y: ' септлн',
+};
+
+function localizeSiSuffix(value: string) {
+  const matchedSuffix = Object.keys(SMART_NUMBER_SUFFIXES).find(suffix =>
+    value.endsWith(suffix),
+  );
+
+  if (!matchedSuffix) {
+    return value;
+  }
+
+  return `${value.slice(0, -matchedSuffix.length)}${SMART_NUMBER_SUFFIXES[matchedSuffix]}`;
+}
 
 function formatValue(value: number) {
   if (value === 0) {
@@ -31,9 +53,7 @@ function formatValue(value: number) {
   }
   const absoluteValue = Math.abs(value);
   if (absoluteValue >= 1000) {
-    // Normal human being are more familiar
-    // with billion (B) that giga (G)
-    return siFormatter(value).replace('G', 'B');
+    return localizeSiSuffix(siFormatter(value));
   }
   if (absoluteValue >= 1) {
     return float2PointFormatter(value);

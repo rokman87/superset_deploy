@@ -160,6 +160,25 @@ SQLLAB_CTAS_NO_LIMIT = True
 log_level_text = os.getenv("SUPERSET_LOG_LEVEL", "INFO")
 LOG_LEVEL = getattr(logging, log_level_text.upper(), logging.INFO)
 
+# Локаль D3 для компактного числового формата: 1k -> 1 тыс, 1M -> 1 млн.
+D3_FORMAT = {
+    "decimal": ",",
+    "thousands": " ",
+    "grouping": [3],
+    "currency": ["", ""],
+    "suffixes": [
+        "",
+        " тыс",
+        " млн",
+        " млрд",
+        " трлн",
+        " квадрлн",
+        " квинтлн",
+        " секстлн",
+        " септлн",
+    ],
+}
+
 # Дополнительные настройки для улучшения производительности асинхронных запросов
 ASYNC_QUERY_TIMEOUT = 3600  # 1 час
 ASYNC_QUERY_RESULT_TIMEOUT = 86400  # 24 часа

@@ -1,5 +1,9 @@
 import { t } from '@superset-ui/core';
-import { ControlPanelConfig, sharedControls } from '@superset-ui/chart-controls';
+import {
+  ControlPanelConfig,
+  D3_FORMAT_OPTIONS,
+  sharedControls,
+} from '@superset-ui/chart-controls';
 
 const config: ControlPanelConfig = {
   controlPanelSections: [
@@ -54,6 +58,8 @@ const config: ControlPanelConfig = {
               ...sharedControls.metrics,
               label: t('Доступные метрики'),
               description: t('Метрики, которые можно включать в левой панели чарта'),
+              validators: [],
+              default: [],
             },
           },
         ],
@@ -72,6 +78,38 @@ const config: ControlPanelConfig = {
               label: t('Показывать левую панель'),
               description: t('Показывать встроенную левую панель управления внутри чарта'),
               default: true,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'custom_pivot_table_show_runtime_query',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Показывать runtime SQL'),
+              description: t('Показывать текущий runtime-запрос прямо внутри чарта'),
+              default: false,
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'custom_pivot_table_sidebar_width_percent',
+            config: {
+              type: 'SliderControl',
+              label: t('Ширина левой панели'),
+              description: t('Ширина встроенной панели настроек внутри чарта, в процентах от общей ширины таблицы'),
+              default: 24,
+              min: 16,
+              max: 50,
+              step: 1,
+              marks: {
+                16: '16%',
+                24: '24%',
+                32: '32%',
+                40: '40%',
+                50: '50%',
+              },
               renderTrigger: true,
             },
           },
@@ -166,6 +204,98 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'y_axis_format',
+            config: {
+              ...sharedControls.y_axis_format,
+              label: t('D3 формат чисел'),
+              description: t('Формат вывода чисел в таблице, например `,.2f`, `.2s`, `$,.0f`'),
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'metricD3Formats',
+            config: {
+              type: 'CollectionControl',
+              label: t('Формат метрик'),
+              description: t(
+                'Позволяет задать отдельный d3-format для каждой метрики. Эти настройки имеют приоритет над общим форматом таблицы.',
+              ),
+              controlName: 'MetricFormatControl',
+              placeholder: t('Индивидуальные форматы не добавлены'),
+              addTooltip: t('Добавить формат для метрики'),
+              itemGenerator: () => ({
+                metric: undefined,
+                d3Format: D3_FORMAT_OPTIONS[0]?.[0],
+              }),
+              renderTrigger: true,
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps(explore: any) {
+                const defaultMetrics = Array.isArray(explore?.controls?.metrics?.value)
+                  ? explore.controls.metrics.value
+                  : [];
+                const selectableMetrics = Array.isArray(explore?.controls?.selectableMetrics?.value)
+                  ? explore.controls.selectableMetrics.value
+                  : [];
+
+                const metricOptions = Array.from(
+                  new Map(
+                    [...defaultMetrics, ...selectableMetrics]
+                      .filter(Boolean)
+                      .map((metric: any) => {
+                        const value =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.optionName ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        const label =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.column?.verbose_name ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        return [String(value), { value: String(value), label: String(label) }] as const;
+                      }),
+                  ).values(),
+                );
+
+                return {
+                  metricOptions,
+                };
+              },
+            },
+          },
+        ],
+        [
+          {
+            name: 'rowSqlFormats',
+            config: {
+              type: 'CollectionControl',
+              label: t('Формат строк по SQL-условию'),
+              description: t(
+                'Позволяет добавить несколько условий для строк. Если строка подходит под SQL-условие, к ее числовым значениям применяется выбранный d3-format.',
+              ),
+              controlName: 'RowSqlFormatControl',
+              placeholder: t('Правила для строк не добавлены'),
+              addTooltip: t('Добавить правило для строки'),
+              itemGenerator: () => ({
+                sqlExpression: '',
+                d3Format: D3_FORMAT_OPTIONS[0]?.[0],
+              }),
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
             name: 'number_format_digits',
             config: {
               type: 'SelectControl',
@@ -188,11 +318,61 @@ const config: ControlPanelConfig = {
         ],
         [
           {
+            name: 'rowOrder',
+            config: {
+              type: 'SelectControl',
+              label: t('Сортировка строк'),
+              default: 'key_a_to_z',
+              choices: [
+                ['key_a_to_z', t('По ключу A-Z')],
+                ['key_z_to_a', t('По ключу Z-A')],
+                ['value_a_to_z', t('По значению по возрастанию')],
+                ['value_z_to_a', t('По значению по убыванию')],
+              ],
+              renderTrigger: true,
+              description: t(
+                'Меняет порядок вывода строк. Можно сортировать либо по названию группы, либо по агрегированному значению метрик.',
+              ),
+            },
+          },
+          {
+            name: 'colOrder',
+            config: {
+              type: 'SelectControl',
+              label: t('Сортировка столбцов'),
+              default: 'key_a_to_z',
+              choices: [
+                ['key_a_to_z', t('По ключу A-Z')],
+                ['key_z_to_a', t('По ключу Z-A')],
+                ['value_a_to_z', t('По значению по возрастанию')],
+                ['value_z_to_a', t('По значению по убыванию')],
+              ],
+              renderTrigger: true,
+              description: t(
+                'Меняет порядок вывода столбцов. Можно сортировать либо по названию группы, либо по агрегированному значению метрик.',
+              ),
+            },
+          },
+        ],
+        [
+          {
             name: 'null_label',
             config: {
               type: 'TextControl',
               label: t('Текст для пустых значений'),
               default: '—',
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'custom_pivot_table_metric_search',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Поиск по метрикам в панели'),
+              description: t('Показывать строку поиска над доступными метриками в левой панели чарта'),
+              default: true,
               renderTrigger: true,
             },
           },

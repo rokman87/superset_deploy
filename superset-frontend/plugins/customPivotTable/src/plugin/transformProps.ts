@@ -53,6 +53,7 @@ type MetricDef = {
   label: string;
   candidates?: string[];
   queryMetric?: any;
+  savedD3Format?: string;
 };
 
 type ConditionalFormattingRule = {
@@ -70,6 +71,16 @@ type MetricSummarySqlRule = {
   totalMode?: string;
   subtotalSql?: string;
   totalSql?: string;
+};
+
+type MetricFormatRule = {
+  metric?: string;
+  d3Format?: string;
+};
+
+type RowSqlFormatRule = {
+  sqlExpression?: string;
+  d3Format?: string;
 };
 
 function compactString(value: unknown): string | undefined {
@@ -184,6 +195,7 @@ function buildMetricDef(metric: any, dataColumnNames: string[]): MetricDef {
     label,
     candidates,
     queryMetric: metric,
+    savedD3Format: compactString(metric?.d3format),
   };
 }
 
@@ -278,6 +290,21 @@ export default function transformProps(chartProps: ChartProps) {
       (effectiveFormData as any).customPivotTableShowSidebar,
     true,
   );
+  const resolvedMetricSearch = parseBoolean(
+    (effectiveFormData as any).custom_pivot_table_metric_search ??
+      (effectiveFormData as any).customPivotTableMetricSearch,
+    true,
+  );
+  const resolvedShowRuntimeQuery = parseBoolean(
+    (effectiveFormData as any).custom_pivot_table_show_runtime_query ??
+      (effectiveFormData as any).customPivotTableShowRuntimeQuery,
+    false,
+  );
+  const resolvedSidebarWidthPercent = Number(
+    (effectiveFormData as any).custom_pivot_table_sidebar_width_percent ??
+      (effectiveFormData as any).customPivotTableSidebarWidthPercent ??
+      24,
+  );
 
   return {
     width,
@@ -294,6 +321,16 @@ export default function transformProps(chartProps: ChartProps) {
 
     showSidebar: resolvedShowSidebar,
     customPivotTableShowSidebar: resolvedShowSidebar,
+    showMetricSearch: resolvedMetricSearch,
+    customPivotTableMetricSearch: resolvedMetricSearch,
+    showRuntimeQuery: resolvedShowRuntimeQuery,
+    customPivotTableShowRuntimeQuery: resolvedShowRuntimeQuery,
+    sidebarWidthPercent: Number.isFinite(resolvedSidebarWidthPercent)
+      ? resolvedSidebarWidthPercent
+      : 24,
+    customPivotTableSidebarWidthPercent: Number.isFinite(resolvedSidebarWidthPercent)
+      ? resolvedSidebarWidthPercent
+      : 24,
 
     showSubtotals: parseBoolean(
       (effectiveFormData as any).showSubtotals ?? (effectiveFormData as any).show_subtotals,
@@ -325,6 +362,19 @@ export default function transformProps(chartProps: ChartProps) {
         (effectiveFormData as any).number_format_digits ??
         2,
     ),
+    numberFormat:
+      typeof ((effectiveFormData as any).yAxisFormat ?? (effectiveFormData as any).y_axis_format) ===
+      'string'
+        ? String((effectiveFormData as any).yAxisFormat ?? (effectiveFormData as any).y_axis_format)
+        : undefined,
+    metricD3Formats: Array.isArray((effectiveFormData as any).metricD3Formats)
+      ? ((effectiveFormData as any).metricD3Formats as MetricFormatRule[])
+      : [],
+    rowSqlFormats: Array.isArray((effectiveFormData as any).rowSqlFormats)
+      ? ((effectiveFormData as any).rowSqlFormats as RowSqlFormatRule[])
+      : [],
+    rowOrder: compactString((effectiveFormData as any).rowOrder) ?? 'key_a_to_z',
+    colOrder: compactString((effectiveFormData as any).colOrder) ?? 'key_a_to_z',
     nullLabel: String(
       (effectiveFormData as any).nullLabel ?? (effectiveFormData as any).null_label ?? '—',
     ),

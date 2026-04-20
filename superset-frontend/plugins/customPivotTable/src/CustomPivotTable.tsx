@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { styled, SupersetClient } from '@superset-ui/core';
+import { getNumberFormatter, styled, SupersetClient } from '@superset-ui/core';
 import { buildRuntimePivotQueryContext } from './plugin/buildQuery';
 
 const HEADER_ROW_HEIGHT = 42;
 const FIRST_COL_WIDTH = 360;
-const SIDEBAR_WIDTH = 330;
+const SIDEBAR_WIDTH = 286;
 const ROOT_NODE_KEY = '__root__';
 const PATH_SEPARATOR = '||';
+const PERSISTED_SELECTION_VERSION = 2;
 
 type StyleProps = {
   headerBg?: string;
@@ -37,6 +38,7 @@ type MetricDef = {
   label: string;
   candidates?: string[];
   queryMetric?: any;
+  savedD3Format?: string;
 };
 
 type ConditionalFormattingRule = {
@@ -58,6 +60,22 @@ type MetricSummarySqlRule = {
   totalSql?: string;
 };
 
+type MetricFormatRule = {
+  metric?: string;
+  d3Format?: string;
+};
+
+type RowSqlFormatRule = {
+  sqlExpression?: string;
+  d3Format?: string;
+};
+
+type PivotSortMode =
+  | 'key_a_to_z'
+  | 'key_z_to_a'
+  | 'value_a_to_z'
+  | 'value_z_to_a';
+
 type LoadedNode = {
   pathKey: string;
   pathValues: string[];
@@ -68,6 +86,11 @@ type LoadedNode = {
   isLeaf: boolean;
   agg: NodeAgg;
   subtotalAgg?: NodeAgg;
+};
+
+type RowFormatRuleMatcher = {
+  d3Format: string;
+  matches: (row: Record<string, any>) => boolean;
 };
 
 type Props = {
@@ -89,8 +112,16 @@ type Props = {
   defaultMetricKeys?: string[];
   selectableDimensions?: FieldDef[];
   metricSummarySql?: MetricSummarySqlRule[];
+  metricD3Formats?: MetricFormatRule[];
+  rowSqlFormats?: RowSqlFormatRule[];
   showSidebar?: boolean | string | number;
   customPivotTableShowSidebar?: boolean | string | number;
+  showMetricSearch?: boolean | string | number;
+  customPivotTableMetricSearch?: boolean | string | number;
+  showRuntimeQuery?: boolean | string | number;
+  customPivotTableShowRuntimeQuery?: boolean | string | number;
+  sidebarWidthPercent?: number;
+  customPivotTableSidebarWidthPercent?: number;
   showSubtotals?: boolean;
   showGrandTotals?: boolean;
   showRowTotals?: boolean;
@@ -98,8 +129,11 @@ type Props = {
   compactDisplay?: boolean;
   showCellBars?: boolean;
   showHeatmap?: boolean;
+  rowOrder?: PivotSortMode;
+  colOrder?: PivotSortMode;
   defaultExpandDepth?: number;
   numberFormatDigits?: number;
+  numberFormat?: string;
   nullLabel?: string;
   headerBg?: string;
   headerTextColor?: string;
@@ -135,6 +169,9 @@ type MetricSelectorProps = {
   metrics: MetricDef[];
   activeMetricKeys: string[];
   onToggle: (metricKey: string) => void;
+  searchValue: string;
+  onSearchChange: (value: string) => void;
+  showMetricSearch?: boolean;
 };
 
 type ChartDataResult = {
@@ -144,6 +181,8 @@ type ChartDataResult = {
 };
 
 type PersistedSelection = {
+  version?: number;
+  compatibilitySignature?: string;
   rowFieldKeys?: string[];
   columnFieldKeys?: string[];
   metricKeys?: string[];
@@ -179,36 +218,36 @@ const Styles = styled.div<StyleProps>`
     flex-direction: column;
     background: rgba(255, 255, 255, 0.96);
     border-right: ${({ showSidebar }) =>
-      showSidebar === false ? 'none' : '1px solid rgba(226, 232, 240, 0.9)'};
+      showSidebar === false ? 'none' : '1px solid rgba(226, 232, 240, 0.75)'};
     overflow: hidden;
     flex: 0 0 auto;
   }
 
   .sidebar-header {
-    padding: ${({ compactDisplay }) => (compactDisplay ? '10px' : '12px')};
-    border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+    padding: ${({ compactDisplay }) => (compactDisplay ? '7px' : '8px')};
+    border-bottom: 1px solid rgba(226, 232, 240, 0.72);
     background: #fff;
   }
 
   .sidebar-title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.02em;
-    color: #0f172a;
-    margin-bottom: 8px;
+    letter-spacing: 0.01em;
+    color: #475569;
+    margin-bottom: 5px;
   }
 
   .sidebar-actions {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
   }
 
   .sidebar-scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    padding: 6px 8px 8px;
+    padding: 4px 5px 5px;
   }
 
   .content {
@@ -230,11 +269,12 @@ const Styles = styled.div<StyleProps>`
   }
 
   .panel-title {
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    color: #64748b;
-    margin: 0 0 6px;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: #94a3b8;
+    margin: 0 0 3px;
     font-weight: 600;
+    text-transform: uppercase;
   }
 
   .hint {
@@ -245,11 +285,11 @@ const Styles = styled.div<StyleProps>`
 
   .btn {
     appearance: none;
-    border: 1px solid rgba(226, 232, 240, 1);
+    border: 1px solid rgba(226, 232, 240, 0.9);
     background: #fff;
-    border-radius: 8px;
-    padding: 7px 8px;
-    font-size: 11px;
+    border-radius: 6px;
+    padding: 5px 5px;
+    font-size: 10px;
     font-weight: 500;
     cursor: pointer;
     color: #334155;
@@ -259,7 +299,7 @@ const Styles = styled.div<StyleProps>`
 
   .btn:hover {
     background: #f8fafc;
-    border-color: rgba(148, 163, 184, 0.65);
+    border-color: rgba(203, 213, 225, 1);
   }
 
   .btn.btn-apply-active {
@@ -280,17 +320,17 @@ const Styles = styled.div<StyleProps>`
     cursor: default;
     opacity: 0.55;
     background: #f8fafc;
-    border-color: rgba(226, 232, 240, 1);
+    border-color: rgba(226, 232, 240, 0.9);
   }
 
   .runtime-warning {
-    margin: 0 16px 12px;
-    padding: 10px 12px;
+    margin: 0 10px 8px;
+    padding: 8px 10px;
     border: 1px solid rgba(245, 158, 11, 0.28);
     border-radius: 12px;
     background: rgba(255, 251, 235, 0.92);
     color: #92400e;
-    font-size: 12px;
+    font-size: 11px;
     line-height: 1.45;
   }
 
@@ -325,44 +365,45 @@ const Styles = styled.div<StyleProps>`
 
   .field-list {
     display: grid;
-    gap: 4px;
+    gap: 0;
   }
 
   .field-list-header {
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) 28px 28px 14px;
-    gap: 8px;
+    grid-template-columns: 12px minmax(0, 1fr) 24px 24px 12px;
+    gap: 5px;
     align-items: center;
-    padding: 0 6px 6px;
+    padding: 0 3px 3px;
     color: #94a3b8;
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+    border-bottom: 1px solid rgba(241, 245, 249, 1);
   }
 
   .field-axis-label {
     justify-self: center;
-    font-size: 9px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     color: #94a3b8;
     text-transform: uppercase;
+    line-height: 1;
   }
 
   .field-card {
     display: grid;
-    grid-template-columns: 14px minmax(0, 1fr) 28px 28px 14px;
+    grid-template-columns: 12px minmax(0, 1fr) 24px 24px 12px;
     align-items: center;
-    gap: 8px;
-    padding: 7px 6px;
-    border-bottom: 1px solid rgba(241, 245, 249, 1);
+    gap: 5px;
+    padding: 4px 3px;
+    border-bottom: 1px solid rgba(248, 250, 252, 1);
     background: transparent;
   }
 
   .field-name-large {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 400;
     color: #334155;
     text-align: left;
@@ -374,25 +415,25 @@ const Styles = styled.div<StyleProps>`
   .field-drag,
   .field-tail-icon {
     color: #cbd5e1;
-    font-size: 11px;
+    font-size: 9px;
     line-height: 1;
     text-align: center;
     user-select: none;
   }
 
   .field-checkbox {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     text-align: center;
     padding: 0;
-    border-radius: 6px;
-    font-size: 11px;
+    border-radius: 4px;
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.01em;
-    border: 1px solid rgba(226, 232, 240, 1);
+    border: 1px solid rgba(226, 232, 240, 0.95);
     background: #fff;
     color: transparent;
     cursor: pointer;
@@ -418,25 +459,52 @@ const Styles = styled.div<StyleProps>`
 
   .metric-list {
     display: grid;
-    gap: 4px;
-    margin-top: 8px;
+    gap: 2px;
+    margin-top: 5px;
+  }
+
+  .metric-list.scrollable {
+    max-height: 308px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .metric-search {
+    width: 100%;
+    border: 1px solid rgba(191, 219, 254, 1);
+    background: rgba(248, 250, 252, 0.95);
+    border-radius: 7px;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: #0f172a;
+    outline: none;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  }
+
+  .metric-search:focus {
+    border-color: ${({ headerBg }) => headerBg || '#203247'};
+    box-shadow:
+      0 0 0 2px rgba(59, 130, 246, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    background: #fff;
   }
 
   .metric-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    border: 1px solid rgba(226, 232, 240, 1);
-    border-radius: 10px;
+    gap: 7px;
+    padding: 5px 7px;
+    border: 1px solid rgba(241, 245, 249, 1);
+    border-radius: 6px;
     background: #fff;
     color: #0f172a;
-    font-size: 12px;
+    font-size: 11px;
     cursor: pointer;
   }
 
   .metric-item:hover {
     background: #f8fafc;
+    border-color: rgba(226, 232, 240, 1);
   }
 
   .metric-item input {
@@ -448,6 +516,16 @@ const Styles = styled.div<StyleProps>`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .metric-empty {
+    padding: 7px 9px;
+    border: 1px dashed rgba(226, 232, 240, 1);
+    border-radius: 6px;
+    color: #64748b;
+    font-size: 11px;
+    text-align: center;
+    background: #fff;
   }
 
   .dropdown {
@@ -970,6 +1048,16 @@ function getSelectionStorageKey(formData?: Record<string, any>) {
   return resolvedKey ? `custom-pivot-table-selection:${resolvedKey}` : undefined;
 }
 
+function getSelectionCompatibilitySignature(
+  availableDimensions: FieldDef[] = [],
+  metrics: MetricDef[] = [],
+) {
+  return JSON.stringify({
+    fieldKeys: [...availableDimensions.map(field => field.key)].sort(),
+    metricKeys: [...metrics.map(metric => metric.key)].sort(),
+  });
+}
+
 function loadPersistedSelection(storageKey?: string): PersistedSelection | null {
   if (!storageKey || typeof window === 'undefined') return null;
 
@@ -980,6 +1068,16 @@ function loadPersistedSelection(storageKey?: string): PersistedSelection | null 
     return typeof parsed === 'object' && parsed ? parsed : null;
   } catch {
     return null;
+  }
+}
+
+function clearPersistedSelection(storageKey?: string) {
+  if (!storageKey || typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Ignore storage errors in embedded/private contexts.
   }
 }
 
@@ -1007,12 +1105,125 @@ function pathToKey(pathValues: any[]) {
   return pathValues.map(serializePathValue).join(PATH_SEPARATOR);
 }
 
+function isValidIdentifier(value: string) {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sqlLikeToRegExp(pattern: string) {
+  const regexPattern = escapeRegExp(pattern).replace(/%/g, '.*').replace(/_/g, '.');
+  return new RegExp(`^${regexPattern}$`, 'i');
+}
+
+function compileSqlLikeCondition(sqlExpression: string) {
+  const trimmed = sqlExpression.trim();
+  if (!trimmed) return () => false;
+
+  let expression = trimmed
+    .replace(/([A-Za-z_][A-Za-z0-9_]*)\s+IS\s+NOT\s+NULL/gi, '($1 != null)')
+    .replace(/([A-Za-z_][A-Za-z0-9_]*)\s+IS\s+NULL/gi, '($1 == null)')
+    .replace(
+      /([A-Za-z_][A-Za-z0-9_]*)\s+LIKE\s+'([^']*)'/gi,
+      (_, fieldName: string, pattern: string) =>
+        `__sqlLike(${fieldName}, ${JSON.stringify(pattern)})`,
+    )
+    .replace(
+      /([A-Za-z_][A-Za-z0-9_]*)\s+IN\s*\(([^)]+)\)/gi,
+      (_, fieldName: string, items: string) => `[${items}].includes(${fieldName})`,
+    )
+    .replace(/\bAND\b/gi, '&&')
+    .replace(/\bOR\b/gi, '||')
+    .replace(/\bNOT\b/gi, '!')
+    .replace(/<>/g, '!=')
+    .replace(/(?<![<>=!])=(?!=)/g, '==');
+
+  try {
+    const evaluator = new Function(
+      'row',
+      '__sqlLike',
+      `with (row) { return Boolean(${expression}); }`,
+    ) as (row: Record<string, any>, sqlLike: (value: unknown, pattern: string) => boolean) => boolean;
+
+    return (row: Record<string, any>) =>
+      evaluator(row, (value: unknown, pattern: string) => {
+        if (value === null || value === undefined) return false;
+        return sqlLikeToRegExp(pattern).test(String(value));
+      });
+  } catch {
+    return () => false;
+  }
+}
+
+function buildRowContext(
+  node: LoadedNode,
+  rowFields: FieldDef[],
+  metrics: MetricDef[],
+  grandAgg?: NodeAgg,
+) {
+  const context: Record<string, any> = {
+    __row_key: node.pathKey,
+    __row_label: node.pathValues.join(' | '),
+    __level: node.level,
+    __is_leaf: node.isLeaf ? 1 : 0,
+    __is_grand_total: 0,
+  };
+
+  rowFields.forEach((field, index) => {
+    const value = node.rawPathValues[index] ?? null;
+    const aliases = Array.from(
+      new Set([field.queryKey, field.key, ...(field.candidates || [])].filter(Boolean)),
+    );
+
+    aliases.forEach(alias => {
+      if (alias && isValidIdentifier(alias)) {
+        context[alias] = value;
+      }
+    });
+  });
+
+  let rowTotal = 0;
+
+  Object.keys(node.agg || {}).forEach(colKey => {
+    metrics.forEach(metric => {
+      const metricValue =
+        (node.hasChildren && node.subtotalAgg ? node.subtotalAgg[colKey]?.[metric.key] : node.agg[colKey]?.[metric.key]) ||
+        0;
+      rowTotal += metricValue;
+
+      const aliases = Array.from(new Set([metric.key, metric.label, ...(metric.candidates || [])]));
+      aliases.forEach(alias => {
+        if (alias && isValidIdentifier(alias)) {
+          context[alias] = (context[alias] || 0) + metricValue;
+        }
+      });
+    });
+  });
+
+  context.row_total = rowTotal;
+  context.__row_total = rowTotal;
+
+  if (grandAgg) {
+    const grandTotal = Object.keys(grandAgg).reduce(
+      (sum, colKey) =>
+        sum + metrics.reduce((metricSum, metric) => metricSum + (grandAgg[colKey]?.[metric.key] || 0), 0),
+      0,
+    );
+    context.__grand_total = grandTotal;
+  }
+
+  return context;
+}
+
 function aggregateNode(
   records: any[],
   colFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
   metricSummaryMap: Record<string, MetricSummarySqlRule> = {},
+  colSortMode: PivotSortMode = 'key_a_to_z',
   kind: 'subtotal' | 'total' = 'subtotal',
 ): { cols: PivotCol[]; agg: NodeAgg } {
   const colsMap = new Map<string, PivotCol>();
@@ -1045,9 +1256,26 @@ function aggregateNode(
     });
   });
 
-  const cols = Array.from(colsMap.values()).sort((a, b) =>
-    (a.values || []).join('¦').localeCompare((b.values || []).join('¦')),
-  );
+  const getColumnLabel = (col: PivotCol) => (col.values || []).join('¦');
+  const getColumnValue = (col: PivotCol) =>
+    metrics.reduce((sum, metric) => sum + (agg[col.key]?.[metric.key] || 0), 0);
+
+  const cols = Array.from(colsMap.values()).sort((a, b) => {
+    const keyDelta = getColumnLabel(a).localeCompare(getColumnLabel(b), 'ru');
+    const valueDelta = getColumnValue(a) - getColumnValue(b);
+
+    switch (colSortMode) {
+      case 'key_z_to_a':
+        return keyDelta * -1;
+      case 'value_a_to_z':
+        return valueDelta !== 0 ? valueDelta : keyDelta;
+      case 'value_z_to_a':
+        return valueDelta !== 0 ? valueDelta * -1 : keyDelta;
+      case 'key_a_to_z':
+      default:
+        return keyDelta;
+    }
+  });
 
   if (!cols.length) {
     cols.push({ key: 'Значение', values: ['Значение'] });
@@ -1138,6 +1366,8 @@ function buildHierarchyState(
   metrics: MetricDef[],
   nullLabel: string,
   metricSummaryRules: MetricSummarySqlRule[],
+  rowSortMode: PivotSortMode = 'key_a_to_z',
+  colSortMode: PivotSortMode = 'key_a_to_z',
 ) {
   const nodesByPath: Record<string, LoadedNode> = {};
   const childrenByParent: Record<string, string[]> = {
@@ -1178,9 +1408,6 @@ function buildHierarchyState(
     });
 
     const childNodes = Array.from(grouped.entries())
-      .sort((a, b) =>
-        normalizeValue(a[0], nullLabel).localeCompare(normalizeValue(b[0], nullLabel), 'ru'),
-      )
       .map(([rawValue, groupedRows]) => {
         const name = normalizeValue(rawValue, nullLabel);
         const rawPathValues = [...parentRawPathValues, rawValue];
@@ -1192,6 +1419,7 @@ function buildHierarchyState(
           metrics,
           nullLabel,
           metricSummaryMap,
+          colSortMode,
           'subtotal',
         );
         const hasChildren = level < rowFields.length - 1;
@@ -1214,6 +1442,40 @@ function buildHierarchyState(
           childrenByParent[pathKey] = [];
         }
         return node;
+      })
+      .sort((left, right) => {
+        const keyDelta = left.name.localeCompare(right.name, 'ru');
+        const leftTotal = Object.keys(left.agg).reduce(
+          (sum, colKey) =>
+            sum +
+            metrics.reduce(
+              (metricSum, metric) => metricSum + (left.agg[colKey]?.[metric.key] || 0),
+              0,
+            ),
+          0,
+        );
+        const rightTotal = Object.keys(right.agg).reduce(
+          (sum, colKey) =>
+            sum +
+            metrics.reduce(
+              (metricSum, metric) => metricSum + (right.agg[colKey]?.[metric.key] || 0),
+              0,
+            ),
+          0,
+        );
+        const valueDelta = leftTotal - rightTotal;
+
+        switch (rowSortMode) {
+          case 'key_z_to_a':
+            return keyDelta * -1;
+          case 'value_a_to_z':
+            return valueDelta !== 0 ? valueDelta : keyDelta;
+          case 'value_z_to_a':
+            return valueDelta !== 0 ? valueDelta * -1 : keyDelta;
+          case 'key_a_to_z':
+          default:
+            return keyDelta;
+        }
       });
 
     childrenByParent[parentPathKey] = childNodes.map(node => node.pathKey);
@@ -1229,6 +1491,7 @@ function buildHierarchyState(
     metrics,
     nullLabel,
     metricSummaryMap,
+    colSortMode,
     'total',
   );
 
@@ -1414,25 +1677,47 @@ function FieldPlacementMenu({
       >
         {columnOrder ?? ''}
       </button>
-      <span className="field-tail-icon" aria-hidden="true">▽</span>
     </div>
   );
 }
 
-function MetricSelector({ metrics, activeMetricKeys, onToggle }: MetricSelectorProps) {
+function MetricSelector({
+  metrics,
+  activeMetricKeys,
+  onToggle,
+  searchValue,
+  onSearchChange,
+  showMetricSearch = true,
+}: MetricSelectorProps) {
+  const shouldScroll = metrics.length > 10;
   return (
-    <div className="metric-list">
-      {metrics.map(metric => (
-        <label key={metric.key} className="metric-item">
-          <input
-            type="checkbox"
-            checked={activeMetricKeys.includes(metric.key)}
-            onChange={() => onToggle(metric.key)}
-          />
-          <span>{metric.label}</span>
-        </label>
-      ))}
-    </div>
+    <>
+      {showMetricSearch ? (
+        <input
+          className="metric-search"
+          type="text"
+          value={searchValue}
+          onChange={event => onSearchChange(event.target.value)}
+          placeholder="Поиск по метрикам"
+        />
+      ) : null}
+      <div className={`metric-list ${shouldScroll ? 'scrollable' : ''}`}>
+        {metrics.length ? (
+          metrics.map(metric => (
+            <label key={metric.key} className="metric-item">
+              <input
+                type="checkbox"
+                checked={activeMetricKeys.includes(metric.key)}
+                onChange={() => onToggle(metric.key)}
+              />
+              <span>{metric.label}</span>
+            </label>
+          ))
+        ) : (
+          <div className="metric-empty">Метрики не найдены</div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1450,6 +1735,12 @@ export default function CustomPivotTable(props: Props) {
     selectableDimensions = [],
     showSidebar: rawShowSidebar,
     customPivotTableShowSidebar: rawCustomPivotTableShowSidebar,
+    showMetricSearch: rawShowMetricSearch,
+    customPivotTableMetricSearch: rawCustomPivotTableMetricSearch,
+    showRuntimeQuery: rawShowRuntimeQuery,
+    customPivotTableShowRuntimeQuery: rawCustomPivotTableShowRuntimeQuery,
+    sidebarWidthPercent: rawSidebarWidthPercent,
+    customPivotTableSidebarWidthPercent: rawCustomPivotTableSidebarWidthPercent,
     showSubtotals = true,
     showGrandTotals = true,
     showRowTotals = true,
@@ -1457,8 +1748,13 @@ export default function CustomPivotTable(props: Props) {
     compactDisplay = false,
     showCellBars = true,
     showHeatmap = true,
+    rowOrder = 'key_a_to_z',
+    colOrder = 'key_a_to_z',
     defaultExpandDepth = 0,
     numberFormatDigits = 2,
+    numberFormat,
+    metricD3Formats = [],
+    rowSqlFormats = [],
     nullLabel = '—',
     headerBg,
     headerTextColor,
@@ -1483,6 +1779,32 @@ export default function CustomPivotTable(props: Props) {
     if (rawShowSidebar !== undefined) return toBoolean(rawShowSidebar, true);
     return true;
   }, [rawCustomPivotTableShowSidebar, rawShowSidebar]);
+  const resolvedShowMetricSearch = useMemo(() => {
+    if (rawCustomPivotTableMetricSearch !== undefined) {
+      return toBoolean(rawCustomPivotTableMetricSearch, true);
+    }
+    if (rawShowMetricSearch !== undefined) return toBoolean(rawShowMetricSearch, true);
+    return true;
+  }, [rawCustomPivotTableMetricSearch, rawShowMetricSearch]);
+  const resolvedShowRuntimeQuery = useMemo(() => {
+    if (rawCustomPivotTableShowRuntimeQuery !== undefined) {
+      return toBoolean(rawCustomPivotTableShowRuntimeQuery, false);
+    }
+    if (rawShowRuntimeQuery !== undefined) return toBoolean(rawShowRuntimeQuery, false);
+    return false;
+  }, [rawCustomPivotTableShowRuntimeQuery, rawShowRuntimeQuery]);
+  const resolvedSidebarWidthPercent = useMemo(() => {
+    const candidate =
+      rawCustomPivotTableSidebarWidthPercent !== undefined
+        ? Number(rawCustomPivotTableSidebarWidthPercent)
+        : Number(rawSidebarWidthPercent ?? 24);
+    return Number.isFinite(candidate) && candidate > 0 ? candidate : 24;
+  }, [rawCustomPivotTableSidebarWidthPercent, rawSidebarWidthPercent]);
+  const resolvedSidebarWidth = useMemo(() => {
+    const widthFromPercent = Math.round((width * resolvedSidebarWidthPercent) / 100);
+    return Math.max(190, Math.min(Math.max(width - 120, 190), widthFromPercent));
+  }, [width, resolvedSidebarWidthPercent]);
+  const isNarrowSidebar = resolvedSidebarWidth < 260;
 
   const availableDimensions = useMemo(() => {
     const merged = [...(selectableDimensions || []), ...(rows || []), ...(columns || [])];
@@ -1496,6 +1818,10 @@ export default function CustomPivotTable(props: Props) {
 
     return Array.from(map.values());
   }, [selectableDimensions, rows, columns]);
+  const selectionCompatibilitySignature = useMemo(
+    () => getSelectionCompatibilitySignature(availableDimensions, metrics),
+    [availableDimensions, metrics],
+  );
 
   const selectionStorageKey = useMemo(() => getSelectionStorageKey(formData), [formData]);
   const runtimeFilterSignature = useMemo(
@@ -1513,6 +1839,7 @@ export default function CustomPivotTable(props: Props) {
   const [rowFields, setRowFields] = useState<FieldDef[]>(rows || []);
   const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
   const [activeMetricKeys, setActiveMetricKeys] = useState<string[]>(defaultMetricKeys);
+  const [metricSearch, setMetricSearch] = useState('');
   const [appliedRowFields, setAppliedRowFields] = useState<FieldDef[]>(rows || []);
   const [appliedColumnFields, setAppliedColumnFields] = useState<FieldDef[]>(columns || []);
   const [appliedMetricKeys, setAppliedMetricKeys] = useState<string[]>(defaultMetricKeys);
@@ -1540,6 +1867,16 @@ export default function CustomPivotTable(props: Props) {
       return;
     }
 
+    const isPersistedSelectionCompatible =
+      persisted.version === PERSISTED_SELECTION_VERSION &&
+      persisted.compatibilitySignature === selectionCompatibilitySignature;
+
+    if (!isPersistedSelectionCompatible) {
+      clearPersistedSelection(selectionStorageKey);
+      setSelectionRestored(true);
+      return;
+    }
+
     const fieldMap = new Map(availableDimensions.map(field => [field.key, field]));
     const metricMap = new Map(metrics.map(metric => [metric.key, metric]));
 
@@ -1551,26 +1888,27 @@ export default function CustomPivotTable(props: Props) {
       .filter((field): field is FieldDef => Boolean(field));
     const restoredMetricKeys = (persisted.metricKeys || []).filter(metricKey => metricMap.has(metricKey));
 
-    if (restoredRows.length || restoredColumns.length || restoredMetricKeys.length) {
-      setRowFields(restoredRows.length ? restoredRows : rows || []);
-      setColumnFields(restoredColumns.length ? restoredColumns : columns || []);
-      setAppliedRowFields(restoredRows.length ? restoredRows : rows || []);
-      setAppliedColumnFields(restoredColumns.length ? restoredColumns : columns || []);
+    const fallbackMetricKeys = defaultMetricKeys.filter(metricKey => metricMap.has(metricKey));
+    const nextRows = restoredRows.length ? restoredRows : rows || [];
+    const nextColumns = restoredColumns.length ? restoredColumns : columns || [];
+    const nextMetricKeys = restoredMetricKeys.length
+      ? restoredMetricKeys
+      : fallbackMetricKeys.length
+        ? fallbackMetricKeys
+        : metrics.map(metric => metric.key);
 
-      const fallbackMetricKeys = defaultMetricKeys.filter(metricKey => metricMap.has(metricKey));
-      const nextMetricKeys = restoredMetricKeys.length
-        ? restoredMetricKeys
-        : fallbackMetricKeys.length
-          ? fallbackMetricKeys
-          : metrics.map(metric => metric.key);
-      setActiveMetricKeys(nextMetricKeys);
-      setAppliedMetricKeys(nextMetricKeys);
-    }
+    setRowFields(nextRows);
+    setColumnFields(nextColumns);
+    setAppliedRowFields(nextRows);
+    setAppliedColumnFields(nextColumns);
+    setActiveMetricKeys(nextMetricKeys);
+    setAppliedMetricKeys(nextMetricKeys);
 
     setSelectionRestored(true);
   }, [
     selectionRestored,
     selectionStorageKey,
+    selectionCompatibilitySignature,
     availableDimensions,
     metrics,
     rows,
@@ -1621,6 +1959,15 @@ export default function CustomPivotTable(props: Props) {
     () => metrics.filter(metric => appliedMetricKeys.includes(metric.key)),
     [metrics, appliedMetricKeys],
   );
+  const filteredMetrics = useMemo(() => {
+    const normalizedSearch = metricSearch.trim().toLowerCase();
+    if (!normalizedSearch) return metrics;
+
+    return metrics.filter(metric =>
+      metric.label.toLowerCase().includes(normalizedSearch) ||
+      metric.key.toLowerCase().includes(normalizedSearch),
+    );
+  }, [metrics, metricSearch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1674,7 +2021,6 @@ export default function CustomPivotTable(props: Props) {
       } catch {
         if (!cancelled && requestVersionRef.current === requestVersion) {
           setQueryData([]);
-          setRuntimeQuery('');
           setIsRuntimeRowLimitReached(false);
         }
       } finally {
@@ -1700,8 +2046,19 @@ export default function CustomPivotTable(props: Props) {
         appliedMetrics,
         nullLabel,
         metricSummarySql,
+        rowOrder,
+        colOrder,
       ),
-    [queryData, appliedRowFields, appliedColumnFields, appliedMetrics, nullLabel, metricSummarySql],
+    [
+      queryData,
+      appliedRowFields,
+      appliedColumnFields,
+      appliedMetrics,
+      nullLabel,
+      metricSummarySql,
+      rowOrder,
+      colOrder,
+    ],
   );
 
   const { nodesByPath, childrenByParent, pivotCols, grandAgg } = hierarchyState;
@@ -1770,9 +2127,90 @@ export default function CustomPivotTable(props: Props) {
     return ranges;
   }, [appliedMetrics, visibleNodes, pivotCols]);
 
-  const formatValue = (value: any) => {
+  const numberFormatter = useMemo(() => {
+    const format = typeof numberFormat === 'string' ? numberFormat.trim() : '';
+    if (format) return getNumberFormatter(format);
+    return null;
+  }, [numberFormat]);
+
+  const metricFormatterMap = useMemo(() => {
+    const rulesMap = metricD3Formats.reduce<Record<string, string>>((acc, rule) => {
+      const metricKey = rule.metric?.trim();
+      const format = rule.d3Format?.trim();
+      if (metricKey && format) {
+        acc[metricKey] = format;
+      }
+      return acc;
+    }, {});
+
+    return metrics.reduce<Record<string, ReturnType<typeof getNumberFormatter>>>((acc, metric) => {
+      const resolvedFormat =
+        rulesMap[metric.key] ||
+        rulesMap[metric.label] ||
+        (metric.candidates || []).map(candidate => rulesMap[candidate]).find(Boolean) ||
+        metric.savedD3Format ||
+        '';
+
+      if (resolvedFormat) {
+        acc[metric.key] = getNumberFormatter(resolvedFormat);
+      }
+      return acc;
+    }, {});
+  }, [metricD3Formats, metrics]);
+
+  const rowFormatMatchers = useMemo<RowFormatRuleMatcher[]>(
+    () =>
+      rowSqlFormats
+        .map(rule => {
+          const sqlExpression = rule.sqlExpression?.trim();
+          const d3Format = rule.d3Format?.trim();
+          if (!sqlExpression || !d3Format) return null;
+
+          return {
+            d3Format,
+            matches: compileSqlLikeCondition(sqlExpression),
+          };
+        })
+        .filter((rule): rule is RowFormatRuleMatcher => Boolean(rule)),
+    [rowSqlFormats],
+  );
+
+  const rowFormatterMap = useMemo(() => {
+    const formatterCache: Record<string, ReturnType<typeof getNumberFormatter>> = {};
+
+    return visibleNodes.reduce<Record<string, ReturnType<typeof getNumberFormatter> | undefined>>(
+      (acc, node) => {
+        const rowContext = buildRowContext(node, appliedRowFields, appliedMetrics, grandAgg);
+        const matchedRule = [...rowFormatMatchers]
+          .reverse()
+          .find(rule => rule.matches(rowContext));
+
+        if (matchedRule?.d3Format) {
+          if (!formatterCache[matchedRule.d3Format]) {
+            formatterCache[matchedRule.d3Format] = getNumberFormatter(matchedRule.d3Format);
+          }
+          acc[node.pathKey] = formatterCache[matchedRule.d3Format];
+        }
+
+        return acc;
+      },
+      {},
+    );
+  }, [visibleNodes, appliedRowFields, appliedMetrics, grandAgg, rowFormatMatchers]);
+
+  const formatValue = (value: any, metricKey?: string, rowFormatter?: ReturnType<typeof getNumberFormatter>) => {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
     if (typeof value === 'number') {
+      if (rowFormatter) {
+        return rowFormatter(value);
+      }
+      const metricFormatter = metricKey ? metricFormatterMap[metricKey] : undefined;
+      if (metricFormatter) {
+        return metricFormatter(value);
+      }
+      if (numberFormatter) {
+        return numberFormatter(value);
+      }
       return value.toLocaleString('ru-RU', {
         minimumFractionDigits: numberFormatDigits,
         maximumFractionDigits: numberFormatDigits,
@@ -1810,6 +2248,23 @@ export default function CustomPivotTable(props: Props) {
         ),
       0,
     );
+
+  const grandTotalFormatter = useMemo(() => {
+    const grandTotalValue = calculateGrandTotal();
+    const rowContext = {
+      __row_key: '__grand_total__',
+      __row_label: 'Общий итог',
+      __level: -1,
+      __is_leaf: 0,
+      __is_grand_total: 1,
+      row_total: grandTotalValue,
+      __row_total: grandTotalValue,
+      __grand_total: grandTotalValue,
+    } as Record<string, any>;
+
+    const matchedRule = [...rowFormatMatchers].reverse().find(rule => rule.matches(rowContext));
+    return matchedRule?.d3Format ? getNumberFormatter(matchedRule.d3Format) : undefined;
+  }, [rowFormatMatchers, grandAgg, appliedMetrics]);
 
   const toggleExpand = (node: LoadedNode) => {
     if (!node.hasChildren) return;
@@ -1914,6 +2369,8 @@ export default function CustomPivotTable(props: Props) {
     setAppliedMetricKeys(activeMetricKeys);
     setExpanded(new Set());
     persistSelection(selectionStorageKey, {
+      version: PERSISTED_SELECTION_VERSION,
+      compatibilitySignature: selectionCompatibilitySignature,
       rowFieldKeys: rowFields.map(field => field.key),
       columnFieldKeys: columnFields.map(field => field.key),
       metricKeys: activeMetricKeys,
@@ -1921,7 +2378,10 @@ export default function CustomPivotTable(props: Props) {
   };
 
   const clearFilters = () => {
-    setActiveMetricKeys(metrics.map(metric => metric.key));
+    const resetMetricKeys = defaultMetricKeys.filter(metricKey =>
+      metrics.some(metric => metric.key === metricKey),
+    );
+    setActiveMetricKeys(resetMetricKeys.length ? resetMetricKeys : metrics.map(metric => metric.key));
     setRowFields(rows || []);
     setColumnFields(columns || []);
   };
@@ -2002,6 +2462,7 @@ export default function CustomPivotTable(props: Props) {
     visibleNodes.map(node => {
       const isSubtotalRow = node.hasChildren && showSubtotals;
       const isExpandedNow = expanded.has(node.pathKey);
+      const rowFormatter = rowFormatterMap[node.pathKey];
 
       return (
         <tr key={node.pathKey} className={`row-header ${isSubtotalRow ? 'subtotal-row' : ''}`}>
@@ -2028,14 +2489,18 @@ export default function CustomPivotTable(props: Props) {
                     className="metric-value"
                     style={getCellStyle(value, metric.key)}
                   >
-                    {showSubtotals || node.isLeaf ? formatValue(value) : '—'}
+                    {showSubtotals || node.isLeaf
+                      ? formatValue(value, metric.key, rowFormatter)
+                      : '—'}
                   </td>
                 );
               })}
             </React.Fragment>
           ))}
 
-          {showGrandTotals && showRowTotals && <td className="metric-value">{formatValue(getNodeTotal(node))}</td>}
+          {showGrandTotals && showRowTotals && (
+            <td className="metric-value">{formatValue(getNodeTotal(node), undefined, rowFormatter)}</td>
+          )}
         </tr>
       );
     });
@@ -2075,16 +2540,23 @@ export default function CustomPivotTable(props: Props) {
           className="sidebar"
           style={{
             display: resolvedShowSidebar ? 'flex' : 'none',
-            width: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
-            minWidth: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
-            maxWidth: resolvedShowSidebar ? SIDEBAR_WIDTH : 0,
+            width: resolvedShowSidebar ? resolvedSidebarWidth : 0,
+            minWidth: resolvedShowSidebar ? resolvedSidebarWidth : 0,
+            maxWidth: resolvedShowSidebar ? resolvedSidebarWidth : 0,
             borderRight: resolvedShowSidebar ? '1px solid rgba(148, 163, 184, 0.22)' : 'none',
             overflow: 'hidden',
           }}
         >
           <div className="sidebar-header">
             <div className="sidebar-title">Поля</div>
-            <div className="sidebar-actions">
+            <div
+              className="sidebar-actions"
+              style={{
+                gridTemplateColumns: isNarrowSidebar
+                  ? 'repeat(2, minmax(0, 1fr))'
+                  : 'repeat(4, minmax(0, 1fr))',
+              }}
+            >
               <button
                 className={`btn ${hasPendingChanges && !isLoading ? 'btn-apply-active' : ''}`}
                 onClick={applySelection}
@@ -2098,12 +2570,12 @@ export default function CustomPivotTable(props: Props) {
             </div>
           </div>
 
-          {/* {runtimeQuery ? (
+          {resolvedShowRuntimeQuery && runtimeQuery ? (
             <details className="runtime-query">
               <summary>Примененный SQL</summary>
               <pre>{runtimeQuery}</pre>
             </details>
-          ) : null} */}
+          ) : null}
 
           {isRuntimeRowLimitReached ? (
             <div className="runtime-warning">
@@ -2119,8 +2591,8 @@ export default function CustomPivotTable(props: Props) {
               <div className="field-list-header">
                 <span />
                 <span>Поле</span>
-                <span className="field-axis-label">Строки</span>
-                <span className="field-axis-label">Столбцы</span>
+                <span className="field-axis-label" title="Строки">☰</span>
+                <span className="field-axis-label" title="Столбцы">|||</span>
                 <span />
               </div>
               <div className="field-list">
@@ -2140,9 +2612,12 @@ export default function CustomPivotTable(props: Props) {
             <div className="panel">
               <div className="panel-title">Метрики</div>
               <MetricSelector
-                metrics={metrics}
+                metrics={filteredMetrics}
                 activeMetricKeys={activeMetricKeys}
                 onToggle={toggleMetric}
+                searchValue={metricSearch}
+                onSearchChange={setMetricSearch}
+                showMetricSearch={resolvedShowMetricSearch}
               />
             </div>
           </div>
@@ -2228,7 +2703,13 @@ export default function CustomPivotTable(props: Props) {
                       <React.Fragment key={`${col.key}-grand`}>
                         {appliedMetrics.map(metric => (
                           <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
-                            <strong>{formatValue(calculateColTotal(col, metric.key))}</strong>
+                            <strong>
+                              {formatValue(
+                                calculateColTotal(col, metric.key),
+                                metric.key,
+                                grandTotalFormatter,
+                              )}
+                            </strong>
                           </td>
                         ))}
                       </React.Fragment>
@@ -2236,7 +2717,7 @@ export default function CustomPivotTable(props: Props) {
 
                     {showRowTotals && (
                       <td className="metric-value">
-                        <strong>{formatValue(calculateGrandTotal())}</strong>
+                        <strong>{formatValue(calculateGrandTotal(), undefined, grandTotalFormatter)}</strong>
                       </td>
                     )}
                   </tr>

@@ -21,33 +21,56 @@ import transformProps from '../../src/plugin/transformProps';
 
 describe('CustomPivotTable transformProps', () => {
   const formData = {
-    colorScheme: 'bnbColors',
     datasource: '3__table',
-    granularity_sqla: 'ds',
-    metric: 'sum__num',
-    series: 'name',
-    boldText: true,
-    headerFontSize: 'xs',
-    headerText: 'my text',
+    groupbyRows: ['name'],
+    groupbyColumns: ['category'],
+    metrics: [{ label: 'sum__num', optionName: 'sum__num', d3format: ',.1f' }],
+    selectableMetrics: [{ label: 'avg__num', optionName: 'avg__num', d3format: '.2%' }],
+    y_axis_format: ',.2f',
+    metricD3Formats: [{ metric: 'sum__num', d3Format: '$,.2f' }],
+    rowSqlFormats: [{ sqlExpression: "name = 'Hulk'", d3Format: ',.0f' }],
+    rowOrder: 'value_z_to_a',
+    colOrder: 'key_z_to_a',
   };
   const chartProps = new ChartProps({
     formData,
     width: 800,
     height: 600,
     theme: supersetTheme,
-    queriesData: [{
-      data: [{ name: 'Hulk', sum__num: 1 }],
-    }],
+    queriesData: [
+      {
+        data: [{ name: 'Hulk', category: 'A', sum__num: 1, avg__num: 0.25 }],
+        colnames: ['name', 'category', 'sum__num', 'avg__num'],
+      },
+    ],
   });
 
   it('should transform chart props for viz', () => {
-    expect(transformProps(chartProps)).toEqual({
+    expect(transformProps(chartProps)).toMatchObject({
       width: 800,
       height: 600,
-      boldText: true,
-      headerFontSize: 'xs',
-      headerText: 'my text',
-      data: [{ name: 'Hulk', sum__num: 1 }],
+      data: [{ name: 'Hulk', category: 'A', sum__num: 1, avg__num: 0.25 }],
+      rowOrder: 'value_z_to_a',
+      colOrder: 'key_z_to_a',
+      numberFormat: ',.2f',
+      metricD3Formats: [{ metric: 'sum__num', d3Format: '$,.2f' }],
+      rowSqlFormats: [{ sqlExpression: "name = 'Hulk'", d3Format: ',.0f' }],
+      rows: [{ key: 'name', queryKey: 'name', label: 'name' }],
+      columns: [{ key: 'category', queryKey: 'category', label: 'category' }],
+      defaultMetricKeys: ['sum__num'],
     });
+
+    expect(transformProps(chartProps).metrics).toEqual([
+      expect.objectContaining({
+        key: 'sum__num',
+        label: 'sum__num',
+        savedD3Format: ',.1f',
+      }),
+      expect.objectContaining({
+        key: 'avg__num',
+        label: 'avg__num',
+        savedD3Format: '.2%',
+      }),
+    ]);
   });
 });
