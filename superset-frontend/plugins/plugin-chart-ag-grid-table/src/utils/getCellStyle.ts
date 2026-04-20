@@ -17,7 +17,10 @@
  * under the License.
  */
 
-import { ColorFormatters } from '@superset-ui/chart-controls';
+import {
+  ColorFormatters,
+  getMetricColorFromSql,
+} from '@superset-ui/chart-controls';
 import { CellClassParams } from '@superset-ui/core/components/ThemedAgGridReact';
 import { BasicColorFormatterType, InputColumn } from '../types';
 
@@ -72,9 +75,14 @@ const getCellStyle = (params: CellStyleParams) => {
 
   const textAlign =
     col?.config?.horizontalAlign || (col?.isNumeric ? 'right' : 'left');
+  const color = getMetricColorFromSql(col?.config?.metricColorSql, {
+    ...(params.data || {}),
+    value,
+  });
 
   return {
     backgroundColor: backgroundColor || '',
+    color: color || '',
     textAlign,
   };
 };

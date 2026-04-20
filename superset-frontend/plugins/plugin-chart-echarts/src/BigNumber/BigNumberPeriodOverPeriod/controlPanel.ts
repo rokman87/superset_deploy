@@ -138,6 +138,10 @@ const config: ControlPanelConfig = {
                       ['visible'],
                     ],
                   },
+                  {
+                    tab: t('SQL color'),
+                    children: [['metricColorSql']],
+                  },
                 ],
               },
               shouldMapStateToProps() {

@@ -41,7 +41,8 @@ export type SharedColumnConfigProp =
   | 'visible'
   | 'customColumnName'
   | 'displayTypeIcon'
-  | 'currencyFormat';
+  | 'currencyFormat'
+  | 'metricColorSql';
 
 const d3NumberFormat: ControlFormItemSpec<'Select'> = {
   allowNewOptions: true,
@@ -178,6 +179,18 @@ const visible: ControlFormItemSpec<'Checkbox'> = {
   defaultValue: true,
   debounceDelay: 200,
 };
+
+const metricColorSql: ControlFormItemSpec<'TextArea'> = {
+  controlType: 'TextArea',
+  label: t('Metric color SQL'),
+  description: t(
+    "Set text color with SQL-like CASE WHEN. Example: CASE WHEN value > 0 THEN 'green' ELSE 'red' END",
+  ),
+  placeholder:
+    "CASE\n  WHEN value > 0 THEN 'green'\n  WHEN value < 0 THEN 'red'\n  ELSE 'blue'\nEND",
+  autoSize: { minRows: 4, maxRows: 8 },
+  debounceDelay: 400,
+};
 /**
  * All configurable column formatting properties.
  */
@@ -203,6 +216,7 @@ export const SHARED_COLUMN_CONFIG_PROPS = {
   colorPositiveNegative,
   currencyFormat,
   visible,
+  metricColorSql,
 };
 
 export const DEFAULT_CONFIG_FORM_LAYOUT: ColumnConfigFormLayout = {

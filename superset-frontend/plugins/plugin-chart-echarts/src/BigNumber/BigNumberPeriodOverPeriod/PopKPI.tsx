@@ -27,7 +27,10 @@ import {
   useTheme,
 } from '@superset-ui/core';
 import { Tooltip } from '@superset-ui/core/components';
-import { DEFAULT_DATE_PATTERN } from '@superset-ui/chart-controls';
+import {
+  DEFAULT_DATE_PATTERN,
+  getMetricColorFromSql,
+} from '@superset-ui/chart-controls';
 import { isEmpty } from 'lodash';
 import {
   ColorSchemeEnum,
@@ -326,6 +329,23 @@ export default function PopKPI(props: PopKPIProps) {
               <ComparisonValue
                 key={`comparison-symbol-${symbol_with_value.columnKey}`}
                 subheaderFontSize={subheaderFontSize}
+                style={{
+                  color: getMetricColorFromSql(
+                    props.columnConfig?.[symbol_with_value.columnKey]
+                      ?.metricColorSql,
+                    {
+                      value:
+                        symbol_with_value.columnKey === 'Previous value'
+                          ? props.rawPreviousValue
+                          : symbol_with_value.columnKey === 'Delta'
+                            ? props.rawValueDifference
+                            : percentDifferenceNumber,
+                      previous_value: props.rawPreviousValue,
+                      delta: props.rawValueDifference,
+                      percent_change: percentDifferenceNumber,
+                    },
+                  ),
+                }}
               >
                 <Tooltip
                   id="tooltip"

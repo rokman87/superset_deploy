@@ -71,6 +71,7 @@ import {
   TableOutlined,
 } from '@ant-design/icons';
 import { isEmpty, debounce, isEqual } from 'lodash';
+import { getMetricColorFromSql } from '@superset-ui/chart-controls';
 import {
   ColorSchemeEnum,
   DataColumnMeta,
@@ -889,6 +890,10 @@ export default function TableChart<D extends DataRecord = DataRecord>(
           const html = isHtml && allowRenderHtml ? { __html: text } : undefined;
 
           let backgroundColor;
+          const textColor = getMetricColorFromSql(config.metricColorSql, {
+            ...row.original,
+            value,
+          });
           let arrow = '';
           const originKey = column.key.substring(column.label.length).trim();
           if (!hasColumnColorFormatters && hasBasicColorFormatters) {
@@ -927,7 +932,7 @@ export default function TableChart<D extends DataRecord = DataRecord>(
                 : '';
           }
           const StyledCell = styled.td`
-            color: ${theme.colorText};
+            color: ${textColor || theme.colorText};
             text-align: ${sharedStyle.textAlign};
             white-space: ${value instanceof Date ? 'nowrap' : undefined};
             position: relative;

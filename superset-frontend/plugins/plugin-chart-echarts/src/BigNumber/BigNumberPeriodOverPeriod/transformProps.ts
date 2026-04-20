@@ -174,7 +174,9 @@ export default function transformProps(chartProps: ChartProps) {
 
   const formatPercentChange = getNumberFormatter(percentDifferenceFormat);
 
-  let valueDifference: number | string = bigNumber - prevNumber;
+  const rawBigNumber = Number(bigNumber);
+  const rawPrevNumber = Number(prevNumber);
+  let valueDifference: number | string = rawBigNumber - rawPrevNumber;
 
   let percentDifferenceNum;
 
@@ -183,7 +185,8 @@ export default function transformProps(chartProps: ChartProps) {
   } else if (!bigNumber || !prevNumber) {
     percentDifferenceNum = bigNumber ? 1 : -1;
   } else {
-    percentDifferenceNum = (bigNumber - prevNumber) / Math.abs(prevNumber);
+    percentDifferenceNum =
+      (rawBigNumber - rawPrevNumber) / Math.abs(rawPrevNumber);
   }
 
   const compType =
@@ -201,6 +204,8 @@ export default function transformProps(chartProps: ChartProps) {
     bigNumber,
     prevNumber,
     valueDifference,
+    rawPreviousValue: rawPrevNumber,
+    rawValueDifference: Number(valueDifference),
     percentDifferenceFormattedString: percentDifference,
     boldText,
     subtitle,

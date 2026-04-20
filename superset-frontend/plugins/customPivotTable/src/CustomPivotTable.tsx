@@ -74,7 +74,9 @@ type PivotSortMode =
   | 'key_a_to_z'
   | 'key_z_to_a'
   | 'value_a_to_z'
-  | 'value_z_to_a';
+  | 'value_z_to_a'
+  | 'sql_asc'
+  | 'sql_desc';
 
 type LoadedNode = {
   pathKey: string;
@@ -92,6 +94,8 @@ type RowFormatRuleMatcher = {
   d3Format: string;
   matches: (row: Record<string, any>) => boolean;
 };
+
+type SortValue = string | number | boolean | null | undefined;
 
 type Props = {
   data: any[];
@@ -131,6 +135,8 @@ type Props = {
   showHeatmap?: boolean;
   rowOrder?: PivotSortMode;
   colOrder?: PivotSortMode;
+  rowSortSql?: string;
+  colSortSql?: string;
   defaultExpandDepth?: number;
   numberFormatDigits?: number;
   numberFormat?: string;
@@ -1118,11 +1124,55 @@ function sqlLikeToRegExp(pattern: string) {
   return new RegExp(`^${regexPattern}$`, 'i');
 }
 
-function compileSqlLikeCondition(sqlExpression: string) {
-  const trimmed = sqlExpression.trim();
-  if (!trimmed) return () => false;
+function translateCaseExpression(expression: string) {
+  let translated = expression;
+  const caseRegex = /CASE\s+([\s\S]+?)\s+END/gi;
 
-  let expression = trimmed
+  let previous = '';
+  while (translated !== previous) {
+    previous = translated;
+    translated = translated.replace(caseRegex, (_, caseBody: string) => {
+      const branches = Array.from(
+        caseBody.matchAll(
+          /WHEN\s+([\s\S]+?)\s+THEN\s+([\s\S]+?)(?=\s+WHEN\s+|\s+ELSE\s*$)/gi,
+        ),
+      );
+      const elseMatch = caseBody.match(/\sELSE\s+([\s\S]+)$/i);
+
+      if (!branches.length || !elseMatch) {
+        return `CASE ${caseBody} END`;
+      }
+
+      let fallback = translateCaseExpression(elseMatch[1].trim());
+
+      for (let index = branches.length - 1; index >= 0; index -= 1) {
+        const condition = translateCaseExpression(branches[index][1].trim());
+        const result = translateCaseExpression(branches[index][2].trim());
+        fallback = `((${condition}) ? (${result}) : (${fallback}))`;
+      }
+
+      return fallback;
+    });
+  }
+
+  return translated;
+}
+
+function createSafeSqlScope(scope: Record<string, any>) {
+  return new Proxy(scope, {
+    has: () => true,
+    get: (target, prop) => {
+      if (prop === Symbol.unscopables) return undefined;
+      return prop in target ? target[prop as keyof typeof target] : undefined;
+    },
+  });
+}
+
+function translateSqlExpression(sqlExpression: string) {
+  const trimmed = sqlExpression.trim();
+  if (!trimmed) return '';
+
+  return translateCaseExpression(trimmed)
     .replace(/([A-Za-z_][A-Za-z0-9_]*)\s+IS\s+NOT\s+NULL/gi, '($1 != null)')
     .replace(/([A-Za-z_][A-Za-z0-9_]*)\s+IS\s+NULL/gi, '($1 == null)')
     .replace(
@@ -1139,22 +1189,60 @@ function compileSqlLikeCondition(sqlExpression: string) {
     .replace(/\bNOT\b/gi, '!')
     .replace(/<>/g, '!=')
     .replace(/(?<![<>=!])=(?!=)/g, '==');
+}
+
+function compileSqlExpression<T = any>(
+  sqlExpression: string,
+  fallbackValue: T,
+): (row: Record<string, any>) => T {
+  const expression = translateSqlExpression(sqlExpression);
+  if (!expression) return () => fallbackValue;
+
+  const sqlLike = (value: unknown, pattern: string) => {
+    if (value === null || value === undefined) return false;
+    return sqlLikeToRegExp(pattern).test(String(value));
+  };
 
   try {
     const evaluator = new Function(
-      'row',
-      '__sqlLike',
-      `with (row) { return Boolean(${expression}); }`,
-    ) as (row: Record<string, any>, sqlLike: (value: unknown, pattern: string) => boolean) => boolean;
+      'scope',
+      `with (scope) { return (${expression}); }`,
+    ) as (scope: Record<string, any>) => T;
 
-    return (row: Record<string, any>) =>
-      evaluator(row, (value: unknown, pattern: string) => {
-        if (value === null || value === undefined) return false;
-        return sqlLikeToRegExp(pattern).test(String(value));
-      });
+    return (row: Record<string, any>) => {
+      try {
+        return evaluator(
+          createSafeSqlScope({
+            ...row,
+            __sqlLike: sqlLike,
+          }),
+        );
+      } catch {
+        return fallbackValue;
+      }
+    };
   } catch {
-    return () => false;
+    return () => fallbackValue;
   }
+}
+
+function compileSqlLikeCondition(sqlExpression: string) {
+  const evaluator = compileSqlExpression<unknown>(sqlExpression, false);
+  return (row: Record<string, any>) => Boolean(evaluator(row));
+}
+
+function compareSortValues(left: SortValue, right: SortValue) {
+  if (left == null && right == null) return 0;
+  if (left == null) return -1;
+  if (right == null) return 1;
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  if (typeof left === 'boolean' && typeof right === 'boolean') {
+    return Number(left) - Number(right);
+  }
+  return String(left).localeCompare(String(right), 'ru', {
+    numeric: true,
+    sensitivity: 'base',
+  });
 }
 
 function buildRowContext(
@@ -1217,6 +1305,48 @@ function buildRowContext(
   return context;
 }
 
+function buildColumnContext(
+  col: PivotCol,
+  columnFields: FieldDef[],
+  metrics: MetricDef[],
+  agg: NodeAgg,
+) {
+  const context: Record<string, any> = {
+    __col_key: col.key,
+    __col_label: (col.values || []).join(' | '),
+    __is_grand_total: 0,
+  };
+
+  columnFields.forEach((field, index) => {
+    const value = col.values?.[index] ?? null;
+    const aliases = Array.from(
+      new Set([field.queryKey, field.key, ...(field.candidates || [])].filter(Boolean)),
+    );
+
+    aliases.forEach(alias => {
+      if (alias && isValidIdentifier(alias)) {
+        context[alias] = value;
+      }
+    });
+  });
+
+  let colTotal = 0;
+  metrics.forEach(metric => {
+    const metricValue = agg[col.key]?.[metric.key] || 0;
+    colTotal += metricValue;
+    const aliases = Array.from(new Set([metric.key, metric.label, ...(metric.candidates || [])]));
+    aliases.forEach(alias => {
+      if (alias && isValidIdentifier(alias)) {
+        context[alias] = metricValue;
+      }
+    });
+  });
+
+  context.col_total = colTotal;
+  context.__col_total = colTotal;
+  return context;
+}
+
 function aggregateNode(
   records: any[],
   colFields: FieldDef[],
@@ -1224,6 +1354,7 @@ function aggregateNode(
   nullLabel: string,
   metricSummaryMap: Record<string, MetricSummarySqlRule> = {},
   colSortMode: PivotSortMode = 'key_a_to_z',
+  colSortSql = '',
   kind: 'subtotal' | 'total' = 'subtotal',
 ): { cols: PivotCol[]; agg: NodeAgg } {
   const colsMap = new Map<string, PivotCol>();
@@ -1259,10 +1390,21 @@ function aggregateNode(
   const getColumnLabel = (col: PivotCol) => (col.values || []).join('¦');
   const getColumnValue = (col: PivotCol) =>
     metrics.reduce((sum, metric) => sum + (agg[col.key]?.[metric.key] || 0), 0);
+  const getColumnSortValue =
+    colSortMode === 'sql_asc' || colSortMode === 'sql_desc'
+      ? compileSqlExpression<SortValue>(colSortSql, null)
+      : null;
 
   const cols = Array.from(colsMap.values()).sort((a, b) => {
     const keyDelta = getColumnLabel(a).localeCompare(getColumnLabel(b), 'ru');
     const valueDelta = getColumnValue(a) - getColumnValue(b);
+    const leftSortValue = getColumnSortValue
+      ? getColumnSortValue(buildColumnContext(a, colFields, metrics, agg))
+      : null;
+    const rightSortValue = getColumnSortValue
+      ? getColumnSortValue(buildColumnContext(b, colFields, metrics, agg))
+      : null;
+    const sqlDelta = compareSortValues(leftSortValue, rightSortValue);
 
     switch (colSortMode) {
       case 'key_z_to_a':
@@ -1271,6 +1413,10 @@ function aggregateNode(
         return valueDelta !== 0 ? valueDelta : keyDelta;
       case 'value_z_to_a':
         return valueDelta !== 0 ? valueDelta * -1 : keyDelta;
+      case 'sql_asc':
+        return sqlDelta !== 0 ? sqlDelta : keyDelta;
+      case 'sql_desc':
+        return sqlDelta !== 0 ? sqlDelta * -1 : keyDelta;
       case 'key_a_to_z':
       default:
         return keyDelta;
@@ -1368,6 +1514,8 @@ function buildHierarchyState(
   metricSummaryRules: MetricSummarySqlRule[],
   rowSortMode: PivotSortMode = 'key_a_to_z',
   colSortMode: PivotSortMode = 'key_a_to_z',
+  rowSortSql = '',
+  colSortSql = '',
 ) {
   const nodesByPath: Record<string, LoadedNode> = {};
   const childrenByParent: Record<string, string[]> = {
@@ -1382,6 +1530,10 @@ function buildHierarchyState(
     },
     {},
   );
+  const getRowSortValue =
+    rowSortMode === 'sql_asc' || rowSortMode === 'sql_desc'
+      ? compileSqlExpression<SortValue>(rowSortSql, null)
+      : null;
 
   const visit = (
     levelRecords: any[],
@@ -1420,6 +1572,7 @@ function buildHierarchyState(
           nullLabel,
           metricSummaryMap,
           colSortMode,
+          colSortSql,
           'subtotal',
         );
         const hasChildren = level < rowFields.length - 1;
@@ -1464,6 +1617,13 @@ function buildHierarchyState(
           0,
         );
         const valueDelta = leftTotal - rightTotal;
+        const leftSortValue = getRowSortValue
+          ? getRowSortValue(buildRowContext(left, rowFields, metrics))
+          : null;
+        const rightSortValue = getRowSortValue
+          ? getRowSortValue(buildRowContext(right, rowFields, metrics))
+          : null;
+        const sqlDelta = compareSortValues(leftSortValue, rightSortValue);
 
         switch (rowSortMode) {
           case 'key_z_to_a':
@@ -1472,6 +1632,10 @@ function buildHierarchyState(
             return valueDelta !== 0 ? valueDelta : keyDelta;
           case 'value_z_to_a':
             return valueDelta !== 0 ? valueDelta * -1 : keyDelta;
+          case 'sql_asc':
+            return sqlDelta !== 0 ? sqlDelta : keyDelta;
+          case 'sql_desc':
+            return sqlDelta !== 0 ? sqlDelta * -1 : keyDelta;
           case 'key_a_to_z':
           default:
             return keyDelta;
@@ -1492,6 +1656,7 @@ function buildHierarchyState(
     nullLabel,
     metricSummaryMap,
     colSortMode,
+    colSortSql,
     'total',
   );
 
@@ -1750,6 +1915,8 @@ export default function CustomPivotTable(props: Props) {
     showHeatmap = true,
     rowOrder = 'key_a_to_z',
     colOrder = 'key_a_to_z',
+    rowSortSql,
+    colSortSql,
     defaultExpandDepth = 0,
     numberFormatDigits = 2,
     numberFormat,
@@ -2048,6 +2215,8 @@ export default function CustomPivotTable(props: Props) {
         metricSummarySql,
         rowOrder,
         colOrder,
+        rowSortSql,
+        colSortSql,
       ),
     [
       queryData,
@@ -2058,6 +2227,8 @@ export default function CustomPivotTable(props: Props) {
       metricSummarySql,
       rowOrder,
       colOrder,
+      rowSortSql,
+      colSortSql,
     ],
   );
 

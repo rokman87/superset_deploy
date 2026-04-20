@@ -39,6 +39,7 @@ import {
   shouldSkipMetricColumn,
   isRegularMetric,
   isPercentMetric,
+  ColumnConfigFormLayout,
 } from '@superset-ui/chart-controls';
 import {
   ensureIsArray,
@@ -57,6 +58,55 @@ import {
 import { isEmpty, last } from 'lodash';
 import { PAGE_SIZE_OPTIONS, SERVER_PAGE_SIZE_OPTIONS } from './consts';
 import { ColorSchemeEnum } from './types';
+
+const TABLE_COLUMN_CONFIG_LAYOUT: ColumnConfigFormLayout = {
+  [GenericDataType.Numeric]: [
+    {
+      tab: t('Column Settings'),
+      children: [
+        [
+          'columnWidth',
+          { name: 'horizontalAlign', override: { defaultValue: 'right' } },
+        ],
+        ['showCellBars'],
+        ['alignPositiveNegative'],
+        ['colorPositiveNegative'],
+      ],
+    },
+    {
+      tab: t('Number formatting'),
+      children: [
+        ['d3NumberFormat'],
+        ['d3SmallNumberFormat'],
+        ['currencyFormat'],
+      ],
+    },
+    {
+      tab: t('SQL color'),
+      children: [['metricColorSql']],
+    },
+  ],
+  [GenericDataType.String]: [
+    [
+      'columnWidth',
+      { name: 'horizontalAlign', override: { defaultValue: 'left' } },
+    ],
+    ['truncateLongCells'],
+  ],
+  [GenericDataType.Temporal]: [
+    [
+      'columnWidth',
+      { name: 'horizontalAlign', override: { defaultValue: 'left' } },
+    ],
+    ['d3TimeFormat'],
+  ],
+  [GenericDataType.Boolean]: [
+    [
+      'columnWidth',
+      { name: 'horizontalAlign', override: { defaultValue: 'left' } },
+    ],
+  ],
+};
 
 function getQueryMode(controls: ControlStateMapping): QueryMode {
   const mode = controls?.query_mode?.value;
@@ -564,6 +614,7 @@ const config: ControlPanelConfig = {
               description: t('Further customize how to display each column'),
               width: 400,
               height: 320,
+              configFormLayout: TABLE_COLUMN_CONFIG_LAYOUT,
               renderTrigger: true,
               shouldMapStateToProps() {
                 return true;

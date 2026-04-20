@@ -328,10 +328,12 @@ const config: ControlPanelConfig = {
                 ['key_z_to_a', t('По ключу Z-A')],
                 ['value_a_to_z', t('По значению по возрастанию')],
                 ['value_z_to_a', t('По значению по убыванию')],
+                ['sql_asc', t('По SQL по возрастанию')],
+                ['sql_desc', t('По SQL по убыванию')],
               ],
               renderTrigger: true,
               description: t(
-                'Меняет порядок вывода строк. Можно сортировать либо по названию группы, либо по агрегированному значению метрик.',
+                'Меняет порядок вывода строк. Можно сортировать по ключу, по агрегированному значению метрик или по пользовательскому SQL-выражению.',
               ),
             },
           },
@@ -346,11 +348,53 @@ const config: ControlPanelConfig = {
                 ['key_z_to_a', t('По ключу Z-A')],
                 ['value_a_to_z', t('По значению по возрастанию')],
                 ['value_z_to_a', t('По значению по убыванию')],
+                ['sql_asc', t('По SQL по возрастанию')],
+                ['sql_desc', t('По SQL по убыванию')],
               ],
               renderTrigger: true,
               description: t(
-                'Меняет порядок вывода столбцов. Можно сортировать либо по названию группы, либо по агрегированному значению метрик.',
+                'Меняет порядок вывода столбцов. Можно сортировать по ключу, по агрегированному значению метрик или по пользовательскому SQL-выражению.',
               ),
+            },
+          },
+        ],
+        [
+          {
+            name: 'rowSortSql',
+            config: {
+              type: 'TextAreaControl',
+              label: t('SQL сортировки строк'),
+              placeholder: t("Например: CASE WHEN country = 'Canada' THEN 1 ELSE 999 END"),
+              language: 'sql',
+              minLines: 4,
+              maxLines: 12,
+              resize: 'vertical',
+              offerEditInModal: true,
+              renderTrigger: true,
+              description: t(
+                'Выражение вычисляется для каждой строки. Доступны поля строк, агрегированные метрики, row_total, __level, __is_leaf.',
+              ),
+              visibility: ({ controls }) =>
+                ['sql_asc', 'sql_desc'].includes(String(controls?.rowOrder?.value ?? '')),
+            },
+          },
+          {
+            name: 'colSortSql',
+            config: {
+              type: 'TextAreaControl',
+              label: t('SQL сортировки столбцов'),
+              placeholder: t("Например: CASE WHEN region = 'EMEA' THEN 1 ELSE 999 END"),
+              language: 'sql',
+              minLines: 4,
+              maxLines: 12,
+              resize: 'vertical',
+              offerEditInModal: true,
+              renderTrigger: true,
+              description: t(
+                'Выражение вычисляется для каждого столбца. Доступны поля столбцов, значения метрик и col_total.',
+              ),
+              visibility: ({ controls }) =>
+                ['sql_asc', 'sql_desc'].includes(String(controls?.colOrder?.value ?? '')),
             },
           },
         ],

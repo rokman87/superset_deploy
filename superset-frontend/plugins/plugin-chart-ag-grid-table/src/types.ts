@@ -59,6 +59,7 @@ export type TableColumnConfig = {
   visible?: boolean;
   customColumnName?: string;
   displayTypeIcon?: boolean;
+  metricColorSql?: string;
 };
 
 export interface DataColumnMeta {

@@ -375,6 +375,8 @@ export default function transformProps(chartProps: ChartProps) {
       : [],
     rowOrder: compactString((effectiveFormData as any).rowOrder) ?? 'key_a_to_z',
     colOrder: compactString((effectiveFormData as any).colOrder) ?? 'key_a_to_z',
+    rowSortSql: compactString((effectiveFormData as any).rowSortSql),
+    colSortSql: compactString((effectiveFormData as any).colSortSql),
     nullLabel: String(
       (effectiveFormData as any).nullLabel ?? (effectiveFormData as any).null_label ?? '—',
     ),

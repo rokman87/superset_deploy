@@ -26,6 +26,7 @@ export const ControlFormItemComponents = {
   Slider,
   InputNumber,
   Input,
+  TextArea: Input.TextArea,
   Select,
   // Directly export Checkbox will result in "using name from external module" error
   // ref: https://stackoverflow.com/questions/43900035/ts4023-exported-variable-x-has-or-is-using-name-y-from-external-module-but
