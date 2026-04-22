@@ -16,6 +16,7 @@ const config: ControlPanelConfig = {
             name: 'groupbyRows',
             config: {
               ...sharedControls.groupby,
+              type: 'DndColumnSelect',
               label: t('Строки по умолчанию'),
               description: t('Начальная иерархия строк'),
             },
@@ -26,6 +27,7 @@ const config: ControlPanelConfig = {
             name: 'groupbyColumns',
             config: {
               ...sharedControls.groupby,
+              type: 'DndColumnSelect',
               label: t('Столбцы по умолчанию'),
               description: t('Начальная иерархия столбцов'),
             },
@@ -36,6 +38,7 @@ const config: ControlPanelConfig = {
             name: 'selectableDimensions',
             config: {
               ...sharedControls.groupby,
+              type: 'DndColumnSelect',
               label: t('Доступные измерения'),
               description: t('Поля, доступные внутри чарта для строк, столбцов и фильтров'),
             },
@@ -46,6 +49,7 @@ const config: ControlPanelConfig = {
             name: 'metrics',
             config: {
               ...sharedControls.metrics,
+              type: 'DndMetricSelect',
               label: t('Метрики по умолчанию'),
               description: t('Метрики, которые будут включены при первом открытии чарта'),
             },
@@ -56,6 +60,7 @@ const config: ControlPanelConfig = {
             name: 'selectableMetrics',
             config: {
               ...sharedControls.metrics,
+              type: 'DndMetricSelect',
               label: t('Доступные метрики'),
               description: t('Метрики, которые можно включать в левой панели чарта'),
               validators: [],
@@ -67,7 +72,7 @@ const config: ControlPanelConfig = {
       ],
     },
     {
-      label: t('Настройки'),
+      label: t('Панель И Runtime'),
       expanded: true,
       controlSetRows: [
         [
@@ -82,6 +87,18 @@ const config: ControlPanelConfig = {
             },
           },
           {
+            name: 'custom_pivot_table_metric_search',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Поиск по метрикам в панели'),
+              description: t('Показывать строку поиска над доступными метриками в левой панели чарта'),
+              default: true,
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
             name: 'custom_pivot_table_show_runtime_query',
             config: {
               type: 'CheckboxControl',
@@ -91,8 +108,6 @@ const config: ControlPanelConfig = {
               renderTrigger: true,
             },
           },
-        ],
-        [
           {
             name: 'custom_pivot_table_sidebar_width_percent',
             config: {
@@ -114,6 +129,104 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [
+          {
+            name: 'row_limit',
+            config: {
+              ...sharedControls.row_limit,
+              label: t('Лимит строк runtime-запроса'),
+              description: t('Максимум строк, которые можно получить для построения таблицы после нажатия "Применить"'),
+              default: 100000,
+            },
+          },
+        ],
+      ],
+    },
+    {
+      label: t('Отображение'),
+      expanded: true,
+      controlSetRows: [
+        [
+          {
+            name: 'compact_display',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Компактный режим'),
+              default: false,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'default_expand_depth',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Глубина раскрытия'),
+              default: 0,
+              renderTrigger: true,
+              choices: [
+                [0, t('Все свернуто')],
+                [1, t('Уровень 1')],
+                [2, t('Уровень 2')],
+                [3, t('Уровень 3')],
+                [99, t('Развернуть всё')],
+              ],
+            },
+          },
+        ],
+        [
+          {
+            name: 'show_cell_bars',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Полосы в ячейках'),
+              default: true,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'show_heatmap',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Тепловая карта'),
+              default: true,
+              renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'null_label',
+            config: {
+              type: 'TextControl',
+              label: t('Текст для пустых значений'),
+              default: '—',
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'cellValueAlign',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Выравнивание значений'),
+              default: 'right',
+              renderTrigger: true,
+              choices: [
+                ['left', t('Слева')],
+                ['right', t('Справа (стандартное)')],
+                ['center', t('По центру')],
+              ],
+              description: t('Меняет выравнивание числовых значений в ячейках таблицы'),
+            },
+          },
+        ],
+      ],
+    },
+    {
+      label: t('Итоги'),
+      expanded: false,
+      controlSetRows: [
         [
           {
             name: 'show_subtotals',
@@ -156,52 +269,74 @@ const config: ControlPanelConfig = {
         ],
         [
           {
-            name: 'show_cell_bars',
+            name: 'metricSummarySql',
             config: {
-              type: 'CheckboxControl',
-              label: t('Полосы в ячейках'),
-              default: true,
+              type: 'CollectionControl',
+              label: t('Формулы для подытогов и итогов'),
+              description: t(
+                'Для каждой метрики можно отдельно задать формулу для промежуточных подытогов по уровням и для общего итога всей таблицы',
+              ),
+              controlName: 'SummarySqlMetricControl',
+              placeholder: t('Правила не добавлены'),
+              addTooltip: t('Добавить формулу для метрики'),
+              itemGenerator: () => ({
+                metric: undefined,
+                subtotalMode: 'default',
+                totalMode: 'default',
+                subtotalSql: '',
+                totalSql: '',
+              }),
               renderTrigger: true,
-            },
-          },
-          {
-            name: 'show_heatmap',
-            config: {
-              type: 'CheckboxControl',
-              label: t('Тепловая карта'),
-              default: true,
-              renderTrigger: true,
+              shouldMapStateToProps() {
+                return true;
+              },
+              mapStateToProps(explore: any) {
+                const defaultMetrics = Array.isArray(explore?.controls?.metrics?.value)
+                  ? explore.controls.metrics.value
+                  : [];
+                const selectableMetrics = Array.isArray(explore?.controls?.selectableMetrics?.value)
+                  ? explore.controls.selectableMetrics.value
+                  : [];
+
+                const metricOptions = Array.from(
+                  new Map(
+                    [...defaultMetrics, ...selectableMetrics]
+                      .filter(Boolean)
+                      .map((metric: any) => {
+                        const value =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.optionName ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        const label =
+                          metric?.label ||
+                          metric?.metric_name ||
+                          metric?.column?.verbose_name ||
+                          metric?.column?.column_name ||
+                          metric?.column_name ||
+                          metric?.value ||
+                          metric;
+                        return [String(value), { value: String(value), label: String(label) }] as const;
+                      }),
+                  ).values(),
+                );
+
+                return {
+                  metricOptions,
+                };
+              },
             },
           },
         ],
-        [
-          {
-            name: 'compact_display',
-            config: {
-              type: 'CheckboxControl',
-              label: t('Компактный режим'),
-              default: false,
-              renderTrigger: true,
-            },
-          },
-          {
-            name: 'default_expand_depth',
-            config: {
-              type: 'SelectControl',
-              freeForm: false,
-              label: t('Глубина раскрытия'),
-              default: 0,
-              renderTrigger: true,
-              choices: [
-                [0, t('Все свернуто')],
-                [1, t('Уровень 1')],
-                [2, t('Уровень 2')],
-                [3, t('Уровень 3')],
-                [99, t('Развернуть всё')],
-              ],
-            },
-          },
-        ],
+      ],
+    },
+    {
+      label: t('Форматирование'),
+      expanded: false,
+      controlSetRows: [
         [
           {
             name: 'y_axis_format',
@@ -210,6 +345,19 @@ const config: ControlPanelConfig = {
               label: t('D3 формат чисел'),
               description: t('Формат вывода чисел в таблице, например `,.2f`, `.2s`, `$,.0f`'),
               renderTrigger: true,
+            },
+          },
+        ],
+        [
+          {
+            name: 'number_format_digits',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Знаков после запятой'),
+              default: 2,
+              renderTrigger: true,
+              choices: [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']],
             },
           },
         ],
@@ -294,28 +442,12 @@ const config: ControlPanelConfig = {
             },
           },
         ],
-        [
-          {
-            name: 'number_format_digits',
-            config: {
-              type: 'SelectControl',
-              freeForm: false,
-              label: t('Знаков после запятой'),
-              default: 2,
-              renderTrigger: true,
-              choices: [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']],
-            },
-          },
-          {
-            name: 'row_limit',
-            config: {
-              ...sharedControls.row_limit,
-              label: t('Лимит строк runtime-запроса'),
-              description: t('Максимум строк, которые можно получить для построения таблицы после нажатия "Применить"'),
-              default: 100000,
-            },
-          },
-        ],
+      ],
+    },
+    {
+      label: t('Сортировка'),
+      expanded: false,
+      controlSetRows: [
         [
           {
             name: 'rowOrder',
@@ -395,93 +527,6 @@ const config: ControlPanelConfig = {
               ),
               visibility: ({ controls }) =>
                 ['sql_asc', 'sql_desc'].includes(String(controls?.colOrder?.value ?? '')),
-            },
-          },
-        ],
-        [
-          {
-            name: 'null_label',
-            config: {
-              type: 'TextControl',
-              label: t('Текст для пустых значений'),
-              default: '—',
-              renderTrigger: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'custom_pivot_table_metric_search',
-            config: {
-              type: 'CheckboxControl',
-              label: t('Поиск по метрикам в панели'),
-              description: t('Показывать строку поиска над доступными метриками в левой панели чарта'),
-              default: true,
-              renderTrigger: true,
-            },
-          },
-        ],
-        [
-          {
-            name: 'metricSummarySql',
-            config: {
-              type: 'CollectionControl',
-              label: t('Формулы для подытогов и итогов'),
-              description: t(
-                'Для каждой метрики можно отдельно задать формулу для промежуточных подытогов по уровням и для общего итога всей таблицы',
-              ),
-              controlName: 'SummarySqlMetricControl',
-              placeholder: t('Правила не добавлены'),
-              addTooltip: t('Добавить формулу для метрики'),
-              itemGenerator: () => ({
-                metric: undefined,
-                subtotalMode: 'default',
-                totalMode: 'default',
-                subtotalSql: '',
-                totalSql: '',
-              }),
-              renderTrigger: true,
-              shouldMapStateToProps() {
-                return true;
-              },
-              mapStateToProps(explore: any) {
-                const defaultMetrics = Array.isArray(explore?.controls?.metrics?.value)
-                  ? explore.controls.metrics.value
-                  : [];
-                const selectableMetrics = Array.isArray(explore?.controls?.selectableMetrics?.value)
-                  ? explore.controls.selectableMetrics.value
-                  : [];
-
-                const metricOptions = Array.from(
-                  new Map(
-                    [...defaultMetrics, ...selectableMetrics]
-                      .filter(Boolean)
-                      .map((metric: any) => {
-                        const value =
-                          metric?.label ||
-                          metric?.metric_name ||
-                          metric?.optionName ||
-                          metric?.column?.column_name ||
-                          metric?.column_name ||
-                          metric?.value ||
-                          metric;
-                        const label =
-                          metric?.label ||
-                          metric?.metric_name ||
-                          metric?.column?.verbose_name ||
-                          metric?.column?.column_name ||
-                          metric?.column_name ||
-                          metric?.value ||
-                          metric;
-                        return [String(value), { value: String(value), label: String(label) }] as const;
-                      }),
-                  ).values(),
-                );
-
-                return {
-                  metricOptions,
-                };
-              },
             },
           },
         ],

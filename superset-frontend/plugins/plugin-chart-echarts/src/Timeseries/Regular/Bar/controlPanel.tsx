@@ -48,6 +48,177 @@ import {
 } from '../../constants';
 import { StackControlsValue } from '../../../constants';
 
+function createValueLabelCustomRows(): ControlSetRow[] {
+  return [
+    [
+      {
+        name: 'showValueChangeWhiskers',
+        config: {
+          type: 'CheckboxControl',
+          label: t('Show change whiskers'),
+          renderTrigger: true,
+          default: false,
+          description: t(
+            'Show change annotations between neighboring bars for a single non-stacked series.',
+          ),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            controls?.orientation?.value === OrientationType.Vertical,
+        },
+      },
+    ],
+    [
+      {
+        name: 'valueLabelOffset',
+        config: {
+          type: 'SliderControl',
+          label: t('Value label height'),
+          renderTrigger: true,
+          min: -200,
+          max: 200,
+          step: 1,
+          default: 0,
+          description: t('Adjust the offset of value labels from the bar.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'changeWhiskerDisplayMode',
+        config: {
+          type: 'SelectControl',
+          label: t('Change whisker display'),
+          renderTrigger: true,
+          default: 'percent',
+          choices: [
+            ['percent', t('Percent')],
+            ['absolute', t('Absolute')],
+          ],
+          description: t(
+            'Show the change between bars as a percentage or an absolute difference.',
+          ),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.showValueChangeWhiskers?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'changeWhiskerNumberFormat',
+        config: {
+          ...sharedControls.y_axis_format,
+          label: t('Change whisker number format'),
+          default: '+.0%',
+          renderTrigger: true,
+          description: t('D3 format for the number shown on change whiskers.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.showValueChangeWhiskers?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'changeWhiskerPositiveColor',
+        config: {
+          type: 'ColorPickerControl',
+          label: t('Positive change color'),
+          renderTrigger: true,
+          description: t('Color for positive change whiskers.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.showValueChangeWhiskers?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'changeWhiskerNegativeColor',
+        config: {
+          type: 'ColorPickerControl',
+          label: t('Negative change color'),
+          renderTrigger: true,
+          description: t('Color for negative change whiskers.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.showValueChangeWhiskers?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'centerBarValueLabel',
+        config: {
+          type: 'CheckboxControl',
+          label: t('Center value in bar'),
+          renderTrigger: true,
+          default: false,
+          description: t('Place the value label in the center of the bar.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'valueLabelColor',
+        config: {
+          type: 'ColorPickerControl',
+          label: t('Value label color'),
+          renderTrigger: true,
+          description: t('Color of value labels.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'valueLabelFontWeight',
+        config: {
+          type: 'SelectControl',
+          label: t('Value label weight'),
+          renderTrigger: true,
+          default: 'normal',
+          choices: [
+            ['normal', t('Normal')],
+            ['bold', t('Bold')],
+          ],
+          description: t('Font weight of value labels.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'valueLabelBackgroundEnabled',
+        config: {
+          type: 'CheckboxControl',
+          label: t('Value label background'),
+          renderTrigger: true,
+          default: false,
+          description: t('Show a background behind value labels.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value),
+        },
+      },
+    ],
+    [
+      {
+        name: 'valueLabelBackgroundColor',
+        config: {
+          type: 'ColorPickerControl',
+          label: t('Background color'),
+          renderTrigger: true,
+          description: t('Background color for value labels.'),
+          visibility: ({ controls }: ControlPanelsContainerProps) =>
+            Boolean(controls?.show_value?.value) &&
+            Boolean(controls?.valueLabelBackgroundEnabled?.value),
+        },
+      },
+    ],
+  ];
+}
+
 const { logAxis, minorSplitLine, truncateYAxis, yAxisBounds, orientation } =
   DEFAULT_FORM_DATA;
 
@@ -368,6 +539,12 @@ const config: ControlPanelConfig = {
         [<ControlSubSectionHeader>{t('Y Axis')}</ControlSubSectionHeader>],
         ...createAxisControl('y'),
       ],
+    },
+    {
+      label: t('Custom'),
+      tabOverride: 'customize',
+      expanded: true,
+      controlSetRows: createValueLabelCustomRows(),
     },
   ],
   formDataOverrides: formData => ({

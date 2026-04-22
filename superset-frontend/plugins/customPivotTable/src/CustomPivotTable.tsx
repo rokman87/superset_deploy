@@ -3,7 +3,10 @@ import { getNumberFormatter, styled, SupersetClient } from '@superset-ui/core';
 import { buildRuntimePivotQueryContext } from './plugin/buildQuery';
 
 const HEADER_ROW_HEIGHT = 42;
+const HEADER_ROW_HEIGHT_COMPACT = 34;
 const FIRST_COL_WIDTH = 360;
+const MIN_SIDEBAR_WIDTH = 240;
+const MIN_FIRST_COL_WIDTH = 96;
 const SIDEBAR_WIDTH = 286;
 const ROOT_NODE_KEY = '__root__';
 const PATH_SEPARATOR = '||';
@@ -16,8 +19,11 @@ type StyleProps = {
   expandColor?: string;
   subtotalBg?: string;
   cellTextColor?: string;
+  cellValueAlign?: 'left' | 'right' | 'center';
   compactDisplay?: boolean;
   showSidebar?: boolean;
+  firstColumnWidth?: number;
+  headerRowHeight?: number;
 };
 
 type PivotCol = {
@@ -147,6 +153,7 @@ type Props = {
   expandColor?: string;
   subtotalBg?: string;
   cellTextColor?: string;
+  cellValueAlign?: 'left' | 'right' | 'center';
   heatmapPositiveColor?: string;
   heatmapNegativeColor?: string;
   barPositiveColor?: string;
@@ -206,6 +213,9 @@ const Styles = styled.div<StyleProps>`
     display: flex;
     flex-direction: row;
     height: 100%;
+    max-height: 100%;
+    min-height: 0;
+    align-items: stretch;
     background: #f8fafc;
     border: 1px solid rgba(148, 163, 184, 0.25);
     border-radius: 18px;
@@ -220,8 +230,10 @@ const Styles = styled.div<StyleProps>`
     min-width: ${({ showSidebar }) => (showSidebar === false ? '0' : `${SIDEBAR_WIDTH}px`)};
     max-width: ${({ showSidebar }) => (showSidebar === false ? '0' : `${SIDEBAR_WIDTH}px`)};
     height: 100%;
+    max-height: 100%;
     display: ${({ showSidebar }) => (showSidebar === false ? 'none' : 'flex')};
     flex-direction: column;
+    align-self: stretch;
     background: rgba(255, 255, 255, 0.96);
     border-right: ${({ showSidebar }) =>
       showSidebar === false ? 'none' : '1px solid rgba(226, 232, 240, 0.75)'};
@@ -233,6 +245,9 @@ const Styles = styled.div<StyleProps>`
     padding: ${({ compactDisplay }) => (compactDisplay ? '7px' : '8px')};
     border-bottom: 1px solid rgba(226, 232, 240, 0.72);
     background: #fff;
+    position: sticky;
+    top: 0;
+    z-index: 5;
   }
 
   .sidebar-title {
@@ -254,12 +269,14 @@ const Styles = styled.div<StyleProps>`
     min-height: 0;
     overflow: auto;
     padding: 4px 5px 5px;
+    overscroll-behavior: contain;
   }
 
   .content {
     flex: 1 1 auto;
     min-width: 0;
     height: 100%;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     background: #fff;
@@ -668,10 +685,12 @@ const Styles = styled.div<StyleProps>`
   .table-scroll {
     min-height: 0;
     flex: 1 1 auto;
+    max-height: 100%;
     overflow: auto;
     background: #fff;
     position: relative;
     z-index: 1;
+    overscroll-behavior: contain;
   }
 
   table {
@@ -681,39 +700,60 @@ const Styles = styled.div<StyleProps>`
     font-size: ${({ compactDisplay }) => (compactDisplay ? '11px' : '12px')};
   }
 
+  thead {
+    position: relative;
+    z-index: 40;
+  }
+
+  thead tr {
+    height: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+  }
+
   thead th {
     background: ${({ headerBg }) => headerBg || '#203247'};
     color: ${({ headerTextColor }) => headerTextColor || '#fff'};
-    padding: 10px 12px;
+    padding: ${({ compactDisplay }) => (compactDisplay ? '7px 12px' : '10px 12px')};
+    height: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    min-height: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    max-height: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    box-sizing: border-box;
     font-weight: 700;
+    line-height: 1.2;
     white-space: nowrap;
     border-right: 1px solid rgba(255,255,255,0.08);
     border-bottom: 1px solid rgba(15,23,42,0.18);
     position: sticky;
     z-index: 20;
+    background-clip: padding-box;
   }
 
   thead tr:nth-child(1) th {
     top: 0;
-    z-index: 22;
+    z-index: 24;
   }
 
   thead tr:nth-child(2) th {
-    top: ${HEADER_ROW_HEIGHT}px;
-    z-index: 21;
+    top: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    z-index: 23;
+  }
+
+  thead tr:nth-child(3) th {
+    top: ${({ headerRowHeight }) => `${(headerRowHeight ?? HEADER_ROW_HEIGHT) * 2}px`};
+    z-index: 22;
   }
 
   .sticky-first {
     position: sticky !important;
     left: 0;
     z-index: 25 !important;
-    min-width: ${FIRST_COL_WIDTH}px;
-    max-width: ${FIRST_COL_WIDTH}px;
+    width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    min-width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    max-width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
     box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
   thead .sticky-first {
-    z-index: 30 !important;
+    z-index: 32 !important;
   }
 
   tbody td {
@@ -733,6 +773,11 @@ const Styles = styled.div<StyleProps>`
     box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
+  tbody {
+    position: relative;
+    z-index: 1;
+  }
+
   .row-header td:first-child {
     background: #fbfdff;
   }
@@ -746,9 +791,14 @@ const Styles = styled.div<StyleProps>`
   }
 
   .metric-value {
-    text-align: right;
+    text-align: ${({ cellValueAlign }) => cellValueAlign || 'right'};
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+  }
+
+  .subtotal-row .metric-value,
+  .total-row .metric-value {
+    text-align: ${({ cellValueAlign }) => cellValueAlign || 'right'};
   }
 
   .subtotal-row td {
@@ -1134,7 +1184,7 @@ function translateCaseExpression(expression: string) {
     translated = translated.replace(caseRegex, (_, caseBody: string) => {
       const branches = Array.from(
         caseBody.matchAll(
-          /WHEN\s+([\s\S]+?)\s+THEN\s+([\s\S]+?)(?=\s+WHEN\s+|\s+ELSE\s*$)/gi,
+          /WHEN\s+([\s\S]+?)\s+THEN\s+([\s\S]+?)(?=\s+WHEN\s+|\s+ELSE\s+[\s\S]*$)/gi,
         ),
       );
       const elseMatch = caseBody.match(/\sELSE\s+([\s\S]+)$/i);
@@ -1243,6 +1293,15 @@ function compareSortValues(left: SortValue, right: SortValue) {
     numeric: true,
     sensitivity: 'base',
   });
+}
+
+function measureTextWidth(text: string, font: string) {
+  if (typeof document === 'undefined') return text.length * 8;
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return text.length * 8;
+  context.font = font;
+  return context.measureText(text).width;
 }
 
 function buildRowContext(
@@ -1929,6 +1988,7 @@ export default function CustomPivotTable(props: Props) {
     expandColor,
     subtotalBg,
     cellTextColor,
+    cellValueAlign = 'right',
     heatmapPositiveColor = '#22c55e',
     heatmapNegativeColor = '#ef4444',
     barPositiveColor = '#22c55e',
@@ -1969,7 +2029,10 @@ export default function CustomPivotTable(props: Props) {
   }, [rawCustomPivotTableSidebarWidthPercent, rawSidebarWidthPercent]);
   const resolvedSidebarWidth = useMemo(() => {
     const widthFromPercent = Math.round((width * resolvedSidebarWidthPercent) / 100);
-    return Math.max(190, Math.min(Math.max(width - 120, 190), widthFromPercent));
+    return Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(Math.max(width - 120, MIN_SIDEBAR_WIDTH), widthFromPercent),
+    );
   }, [width, resolvedSidebarWidthPercent]);
   const isNarrowSidebar = resolvedSidebarWidth < 260;
 
@@ -2369,6 +2432,28 @@ export default function CustomPivotTable(props: Props) {
     );
   }, [visibleNodes, appliedRowFields, appliedMetrics, grandAgg, rowFormatMatchers]);
 
+  const firstColumnWidth = useMemo(() => {
+    const fontSize = compactDisplay ? 11 : 12;
+    const font = `500 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const headerLabel = appliedRowFields.length
+      ? appliedRowFields.map(field => field.label).join(' → ')
+      : 'Строки';
+
+    let widest = measureTextWidth(headerLabel, font) + 24;
+
+    visibleNodes.forEach(node => {
+      const rowWidth =
+        measureTextWidth(node.name, font) +
+        node.level * 18 +
+        44;
+      widest = Math.max(widest, rowWidth);
+    });
+
+    return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
+  }, [compactDisplay, appliedRowFields, visibleNodes]);
+
+  const headerRowHeight = compactDisplay ? HEADER_ROW_HEIGHT_COMPACT : HEADER_ROW_HEIGHT;
+
   const formatValue = (value: any, metricKey?: string, rowFormatter?: ReturnType<typeof getNumberFormatter>) => {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
     if (typeof value === 'number') {
@@ -2686,8 +2771,11 @@ export default function CustomPivotTable(props: Props) {
         expandColor={expandColor}
         subtotalBg={subtotalBg}
         cellTextColor={cellTextColor}
+        cellValueAlign={cellValueAlign}
         compactDisplay={compactDisplay}
         showSidebar={resolvedShowSidebar}
+        firstColumnWidth={firstColumnWidth}
+        headerRowHeight={headerRowHeight}
       >
         <div className="empty">Выберите хотя бы одну метрику в настройках графика.</div>
       </Styles>
@@ -2703,8 +2791,11 @@ export default function CustomPivotTable(props: Props) {
       expandColor={expandColor}
       subtotalBg={subtotalBg}
       cellTextColor={cellTextColor}
+      cellValueAlign={cellValueAlign}
       compactDisplay={compactDisplay}
       showSidebar={resolvedShowSidebar}
+      firstColumnWidth={firstColumnWidth}
+      headerRowHeight={headerRowHeight}
     >
       <div className="pivot-shell">
         <div

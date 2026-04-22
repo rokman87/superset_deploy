@@ -51,6 +51,13 @@ export enum EchartsTimeseriesSeriesType {
   End = 'end',
 }
 
+export type ColorPickerValue = {
+  r: number;
+  g: number;
+  b: number;
+  a?: number;
+};
+
 export type EchartsTimeseriesFormData = QueryFormData & {
   annotationLayers: AnnotationLayer[];
   area: boolean;
@@ -92,6 +99,17 @@ export type EchartsTimeseriesFormData = QueryFormData & {
   xAxisLabelRotation: number;
   xAxisLabelInterval: number | string;
   showValue: boolean;
+  valueLabelOffset?: number;
+  centerBarValueLabel?: boolean;
+  valueLabelColor?: ColorPickerValue;
+  valueLabelFontWeight?: 'normal' | 'bold';
+  valueLabelBackgroundEnabled?: boolean;
+  valueLabelBackgroundColor?: ColorPickerValue;
+  showValueChangeWhiskers?: boolean;
+  changeWhiskerDisplayMode?: 'percent' | 'absolute';
+  changeWhiskerPositiveColor?: ColorPickerValue;
+  changeWhiskerNegativeColor?: ColorPickerValue;
+  changeWhiskerNumberFormat?: string;
   onlyTotal: boolean;
   showExtraControls: boolean;
   percentageThreshold: number;

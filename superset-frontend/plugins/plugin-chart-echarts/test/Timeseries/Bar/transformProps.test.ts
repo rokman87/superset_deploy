@@ -18,7 +18,7 @@
  */
 import { ChartProps, SqlaFormData, supersetTheme } from '@superset-ui/core';
 import { EchartsTimeseriesChartProps } from '../../../src/types';
-import transformProps from '../../../src/Timeseries/transformProps';
+import transformProps from '../../../src/Timeseries/Regular/Bar/transformProps';
 import { DEFAULT_FORM_DATA } from '../../../src/Timeseries/constants';
 import { EchartsTimeseriesSeriesType } from '../../../src/Timeseries/types';
 
@@ -348,6 +348,112 @@ describe('Bar Chart X-axis Time Formatting', () => {
 
       expect(chartProps.formData.xAxisTimeFormat).toBeDefined();
       expect(chartProps.formData.xAxisTimeFormat).toBe('smart_date');
+    });
+  });
+
+  describe('Custom bar value labels', () => {
+    it('should customize value labels and add change whiskers', () => {
+      const chartProps = new ChartProps({
+        width: 800,
+        height: 600,
+        theme: supersetTheme,
+        queriesData: [
+          {
+            data: [
+              { __timestamp: 1609459200000, value: 3586 },
+              { __timestamp: 1640995200000, value: 4998 },
+              { __timestamp: 1672531200000, value: 4839 },
+            ],
+            colnames: ['__timestamp', 'value'],
+            coltypes: ['TIMESTAMP', 'BIGINT'],
+          },
+        ],
+        formData: {
+          ...DEFAULT_FORM_DATA,
+          colorScheme: 'bnbColors',
+          datasource: '3__table',
+          metrics: ['value'],
+          viz_type: 'echarts_timeseries_bar',
+          seriesType: EchartsTimeseriesSeriesType.Bar,
+          orientation: 'vertical',
+          showValue: true,
+          valueLabelOffset: 18,
+          centerBarValueLabel: true,
+          valueLabelFontWeight: 'bold',
+          valueLabelBackgroundEnabled: true,
+          valueLabelColor: { r: 255, g: 255, b: 255, a: 1 },
+          valueLabelBackgroundColor: { r: 0, g: 0, b: 0, a: 0.5 },
+          showValueChangeWhiskers: true,
+          changeWhiskerNumberFormat: '+.1%',
+          changeWhiskerPositiveColor: { r: 0, g: 128, b: 0, a: 1 },
+          changeWhiskerNegativeColor: { r: 220, g: 38, b: 38, a: 1 },
+        },
+      });
+
+      const transformedProps = transformProps(
+        chartProps as EchartsTimeseriesChartProps,
+      );
+
+      const series = transformedProps.echartOptions.series as any[];
+      const barSeries = series.find(entry => entry.type === 'bar');
+      const customSeries = series.find(
+        entry => entry.name === '__change_whiskers__',
+      );
+
+      expect(barSeries.label.position).toBe('inside');
+      expect(barSeries.label.distance).toBe(0);
+      expect(barSeries.label.fontWeight).toBe('bold');
+      expect(barSeries.label.color).toBe('rgba(255, 255, 255, 1)');
+      expect(barSeries.label.backgroundColor).toBe('rgba(0, 0, 0, 0.5)');
+      expect(customSeries).toBeDefined();
+      expect(customSeries.type).toBe('custom');
+      expect(customSeries.data).toHaveLength(2);
+      expect(customSeries.data[0][4]).toBe('+39.4%');
+      expect(customSeries.data[0][5]).toBe('rgba(0, 128, 0, 1)');
+      expect(customSeries.data[1][5]).toBe('rgba(220, 38, 38, 1)');
+    });
+
+    it('should support absolute whisker values', () => {
+      const chartProps = new ChartProps({
+        width: 800,
+        height: 600,
+        theme: supersetTheme,
+        queriesData: [
+          {
+            data: [
+              { __timestamp: 1609459200000, value: 3586 },
+              { __timestamp: 1640995200000, value: 4998 },
+              { __timestamp: 1672531200000, value: 4839 },
+            ],
+            colnames: ['__timestamp', 'value'],
+            coltypes: ['TIMESTAMP', 'BIGINT'],
+          },
+        ],
+        formData: {
+          ...DEFAULT_FORM_DATA,
+          colorScheme: 'bnbColors',
+          datasource: '3__table',
+          metrics: ['value'],
+          viz_type: 'echarts_timeseries_bar',
+          seriesType: EchartsTimeseriesSeriesType.Bar,
+          orientation: 'vertical',
+          showValueChangeWhiskers: true,
+          changeWhiskerDisplayMode: 'absolute',
+          changeWhiskerNumberFormat: '+,.0f',
+        },
+      });
+
+      const transformedProps = transformProps(
+        chartProps as EchartsTimeseriesChartProps,
+      );
+
+      const series = transformedProps.echartOptions.series as any[];
+      const customSeries = series.find(
+        entry => entry.name === '__change_whiskers__',
+      );
+
+      expect(customSeries.data[0][4]).toBe('+1,412');
+      expect(customSeries.data[1][4]).toBe('-159');
     });
   });
 });

@@ -179,6 +179,52 @@ describe('Bar Chart Control Panel', () => {
       expect(chartOptionsSection!.controlSetRows!.length).toBeGreaterThan(0);
     });
 
+    it('should have Custom section', () => {
+      const config = controlPanel;
+
+      const customSection = config.controlPanelSections.find(
+        section => section && section.label === 'Custom',
+      );
+
+      expect(customSection).toBeDefined();
+      expect(customSection!.expanded).toBe(true);
+    });
+
+    it('should include custom value label controls', () => {
+      const config = controlPanel;
+      const expectedControls = [
+        'showValueChangeWhiskers',
+        'changeWhiskerDisplayMode',
+        'changeWhiskerNumberFormat',
+        'changeWhiskerPositiveColor',
+        'changeWhiskerNegativeColor',
+        'valueLabelOffset',
+        'centerBarValueLabel',
+        'valueLabelColor',
+        'valueLabelFontWeight',
+        'valueLabelBackgroundEnabled',
+        'valueLabelBackgroundColor',
+      ];
+
+      const controlNames = config.controlPanelSections.flatMap(
+        section =>
+          section?.controlSetRows?.flatMap(row =>
+            row.flatMap(control =>
+              typeof control === 'object' &&
+              control !== null &&
+              'name' in control &&
+              control.name
+                ? [String(control.name)]
+                : [],
+            ),
+          ) || [],
+      );
+
+      expectedControls.forEach(controlName => {
+        expect(controlNames).toContain(controlName);
+      });
+    });
+
     it('should have proper form data overrides', () => {
       const config = controlPanel;
 

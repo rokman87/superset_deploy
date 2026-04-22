@@ -367,6 +367,10 @@ export default function transformProps(chartProps: ChartProps) {
       'string'
         ? String((effectiveFormData as any).yAxisFormat ?? (effectiveFormData as any).y_axis_format)
         : undefined,
+    cellValueAlign:
+      compactString((effectiveFormData as any).cellValueAlign) ??
+      compactString((effectiveFormData as any).cell_value_align) ??
+      'right',
     metricD3Formats: Array.isArray((effectiveFormData as any).metricD3Formats)
       ? ((effectiveFormData as any).metricD3Formats as MetricFormatRule[])
       : [],
