@@ -45,6 +45,63 @@ function createValueLabelColorRow(controlSuffix: string) {
   ];
 }
 
+function createValueLabelFontWeightRow(controlSuffix: string) {
+  return [
+    {
+      name: `valueLabelFontWeight${controlSuffix}`,
+      config: {
+        type: 'SelectControl',
+        label: t('Value label weight'),
+        renderTrigger: true,
+        default: 'normal',
+        choices: [
+          ['normal', t('Normal')],
+          ['bold', t('Bold')],
+        ],
+        description: t('Font weight of value labels for this query.'),
+        visibility: ({ controls }: ControlPanelsContainerProps) =>
+          Boolean(controls?.[`show_value${controlSuffix}`]?.value),
+      },
+    },
+  ];
+}
+
+function createValueLabelBackgroundEnabledRow(controlSuffix: string) {
+  return [
+    {
+      name: `valueLabelBackgroundEnabled${controlSuffix}`,
+      config: {
+        type: 'CheckboxControl',
+        label: t('Value label background'),
+        renderTrigger: true,
+        default: false,
+        description: t('Show a background behind value labels for this query.'),
+        visibility: ({ controls }: ControlPanelsContainerProps) =>
+          Boolean(controls?.[`show_value${controlSuffix}`]?.value),
+      },
+    },
+  ];
+}
+
+function createValueLabelBackgroundColorRow(controlSuffix: string) {
+  return [
+    {
+      name: `valueLabelBackgroundColor${controlSuffix}`,
+      config: {
+        type: 'ColorPickerControl',
+        label: t('Background color'),
+        renderTrigger: true,
+        description: t('Background color for value labels for this query.'),
+        visibility: ({ controls }: ControlPanelsContainerProps) =>
+          Boolean(controls?.[`show_value${controlSuffix}`]?.value) &&
+          Boolean(
+            controls?.[`valueLabelBackgroundEnabled${controlSuffix}`]?.value,
+          ),
+      },
+    },
+  ];
+}
+
 function createCenterBarValueLabelRow(controlSuffix: string) {
   return [
     {
@@ -105,6 +162,9 @@ chartOptionsSection.controlSetRows = chartOptionsSection.controlSetRows
         row,
         createValueLabelOffsetRow(''),
         createValueLabelColorRow(''),
+        createValueLabelFontWeightRow(''),
+        createValueLabelBackgroundEnabledRow(''),
+        createValueLabelBackgroundColorRow(''),
         createCenterBarValueLabelRow(''),
       ];
     }
@@ -118,6 +178,9 @@ chartOptionsSection.controlSetRows = chartOptionsSection.controlSetRows
         row,
         createValueLabelOffsetRow('B'),
         createValueLabelColorRow('B'),
+        createValueLabelFontWeightRow('B'),
+        createValueLabelBackgroundEnabledRow('B'),
+        createValueLabelBackgroundColorRow('B'),
         createCenterBarValueLabelRow('B'),
       ];
     }

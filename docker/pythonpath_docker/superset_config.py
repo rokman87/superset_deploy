@@ -15,3 +15,9 @@ D3_FORMAT = {
         " септлн",
     ],
 }
+
+BABEL_DEFAULT_LOCALE = "ru"
+LANGUAGES = {
+    "en": {"flag": "us", "name": "English"},
+    "ru": {"flag": "ru", "name": "Russian"},
+}

@@ -5,7 +5,7 @@
 ######################################################################
 ARG PY_VER=3.11.13-slim-bookworm
 ARG BUILDPLATFORM=linux/amd64
-ARG BUILD_TRANSLATIONS=false
+ARG BUILD_TRANSLATIONS=true
 
 ######################################################################
 # Node stage to build frontend assets

@@ -44,6 +44,15 @@ function withCustomValueLabelConfig(
   const valueLabelColor = isFirstQuery
     ? toRgbaString(formData.valueLabelColor)
     : toRgbaString(formData.valueLabelColorB);
+  const valueLabelBackgroundColor = isFirstQuery
+    ? toRgbaString(formData.valueLabelBackgroundColor)
+    : toRgbaString(formData.valueLabelBackgroundColorB);
+  const valueLabelFontWeight = isFirstQuery
+    ? formData.valueLabelFontWeight
+    : formData.valueLabelFontWeightB;
+  const hasBackground = isFirstQuery
+    ? Boolean(formData.valueLabelBackgroundEnabled)
+    : Boolean(formData.valueLabelBackgroundEnabledB);
   const isCenteredBarLabel =
     seriesType === EchartsTimeseriesSeriesType.Bar && centerBarValueLabel;
 
@@ -54,12 +63,18 @@ function withCustomValueLabelConfig(
       distance: isCenteredBarLabel ? 0 : valueLabelOffset,
       position: isCenteredBarLabel ? 'inside' : label.position,
       color:
-        valueLabelColor ?? (isCenteredBarLabel ? '#fff' : theme?.colorText),
-      fontWeight: 'bold',
-      textBorderColor: isCenteredBarLabel ? 'transparent' : theme?.colorBgBase,
-      textBorderWidth: isCenteredBarLabel ? 0 : 3,
-      textShadowBlur: isCenteredBarLabel ? 0 : 2,
-      textShadowColor: isCenteredBarLabel ? 'transparent' : theme?.colorBgBase,
+        valueLabelColor ??
+        (isCenteredBarLabel && !hasBackground ? '#fff' : theme?.colorText),
+      fontWeight: valueLabelFontWeight ?? 'normal',
+      backgroundColor: hasBackground
+        ? (valueLabelBackgroundColor ?? theme?.colorBgContainer)
+        : 'transparent',
+      borderRadius: hasBackground ? 4 : 0,
+      padding: hasBackground ? [4, 6] : 0,
+      textBorderColor: hasBackground ? 'transparent' : theme?.colorBgBase,
+      textBorderWidth: hasBackground ? 0 : 3,
+      textShadowBlur: hasBackground ? 0 : 2,
+      textShadowColor: hasBackground ? 'transparent' : theme?.colorBgBase,
     },
   };
 }

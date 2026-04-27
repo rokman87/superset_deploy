@@ -173,9 +173,9 @@ function getMetricCandidates(metric: any): string[] {
   if (typeof metric === 'string') return [metric];
 
   return [
+    compactString(metric?.optionName),
     compactString(metric?.label),
     compactString(metric?.metric_name),
-    compactString(metric?.optionName),
     compactString(metric?.column?.column_name),
     compactString(metric?.column?.verbose_name),
     compactString(metric?.column_name),
@@ -305,6 +305,11 @@ export default function transformProps(chartProps: ChartProps) {
       (effectiveFormData as any).customPivotTableSidebarWidthPercent ??
       24,
   );
+  const resolvedColumnHeaderTiltPercent = Number(
+    (effectiveFormData as any).column_header_tilt_percent ??
+      (effectiveFormData as any).columnHeaderTiltPercent ??
+      0,
+  );
 
   return {
     width,
@@ -350,6 +355,32 @@ export default function transformProps(chartProps: ChartProps) {
     compactDisplay: parseBoolean(
       (effectiveFormData as any).compactDisplay ??
         (effectiveFormData as any).compact_display,
+      false,
+    ),
+    tableViewMode:
+      compactString((effectiveFormData as any).table_view_mode) === 'classic'
+        ? 'classic'
+        : 'pivot',
+    metricsLayout:
+      compactString((effectiveFormData as any).metrics_layout) === 'rows'
+        ? 'rows'
+        : 'columns',
+    showMetricsLayoutToggle: parseBoolean(
+      (effectiveFormData as any).show_metrics_layout ??
+        (effectiveFormData as any).showMetricsLayoutToggle,
+      false,
+    ),
+    transposeTable: parseBoolean(
+      (effectiveFormData as any).transpose_table ??
+        (effectiveFormData as any).transposeTable,
+      false,
+    ),
+    columnHeaderTiltPercent: Number.isFinite(resolvedColumnHeaderTiltPercent)
+      ? Math.max(0, Math.min(100, resolvedColumnHeaderTiltPercent))
+      : 0,
+    excelStyleDiagonalHeaders: parseBoolean(
+      (effectiveFormData as any).excel_style_diagonal_headers ??
+        (effectiveFormData as any).excelStyleDiagonalHeaders,
       false,
     ),
     defaultExpandDepth: Number(

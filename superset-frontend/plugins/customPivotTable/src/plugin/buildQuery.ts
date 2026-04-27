@@ -48,9 +48,9 @@ function extractMetricCandidates(metric: any): string[] {
   if (typeof metric === 'string') return [metric];
 
   return [
+    metric?.optionName,
     metric?.label,
     metric?.metric_name,
-    metric?.optionName,
     metric?.column?.column_name,
     metric?.column?.verbose_name,
     metric?.column_name,
@@ -87,6 +87,7 @@ export function buildRuntimePivotQueryContext(
       pivotSelection?: {
         rowFields?: RawFieldOption[];
         columnFields?: RawFieldOption[];
+        metrics?: any[];
         metricKeys?: string[];
       };
     };
@@ -98,6 +99,9 @@ export function buildRuntimePivotQueryContext(
   const runtimeSelection = options?.ownState?.pivotSelection;
   const selectedRowFields = runtimeSelection?.rowFields ?? groupbyRows;
   const selectedColumnFields = runtimeSelection?.columnFields ?? groupbyColumns;
+  const selectedMetrics = Array.isArray(runtimeSelection?.metrics)
+    ? runtimeSelection?.metrics.filter(Boolean)
+    : [];
   const selectedMetricKeys = runtimeSelection?.metricKeys ?? [];
 
   const columns = Array.from(
@@ -111,7 +115,9 @@ export function buildRuntimePivotQueryContext(
 
   const metrics = Array.from(
     new Map(
-      (selectedMetricKeys.length
+      (selectedMetrics.length
+        ? selectedMetrics
+        : selectedMetricKeys.length
         ? allMetrics.filter(metric => {
             const metricKey = extractMetricKey(metric);
             return (
@@ -144,6 +150,7 @@ export default function buildQuery(
       pivotSelection?: {
         rowFields?: RawFieldOption[];
         columnFields?: RawFieldOption[];
+        metrics?: any[];
         metricKeys?: string[];
       };
       [key: string]: any;

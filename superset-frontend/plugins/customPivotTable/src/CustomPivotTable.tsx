@@ -23,7 +23,12 @@ type StyleProps = {
   compactDisplay?: boolean;
   showSidebar?: boolean;
   firstColumnWidth?: number;
+  metricLabelColumnWidth?: number;
   headerRowHeight?: number;
+  metricHeaderRowHeight?: number;
+  columnHeaderTiltDeg?: number;
+  metricsOnRows?: boolean;
+  excelStyleDiagonalHeaders?: boolean;
 };
 
 type PivotCol = {
@@ -56,7 +61,7 @@ type ConditionalFormattingRule = {
   colorScheme?: string;
 };
 
-type NodeAgg = Record<string, Record<string, number>>;
+type NodeAgg = Record<string, Record<string, number | null>>;
 
 type MetricSummarySqlRule = {
   metric?: string;
@@ -143,6 +148,12 @@ type Props = {
   colOrder?: PivotSortMode;
   rowSortSql?: string;
   colSortSql?: string;
+  tableViewMode?: 'pivot' | 'classic';
+  metricsLayout?: 'columns' | 'rows';
+  showMetricsLayoutToggle?: boolean;
+  transposeTable?: boolean;
+  columnHeaderTiltPercent?: number;
+  excelStyleDiagonalHeaders?: boolean;
   defaultExpandDepth?: number;
   numberFormatDigits?: number;
   numberFormat?: string;
@@ -187,10 +198,21 @@ type MetricSelectorProps = {
   showMetricSearch?: boolean;
 };
 
+type MetricsLayoutToggleProps = {
+  value: 'columns' | 'rows';
+  onChange: (value: 'columns' | 'rows') => void;
+};
+
 type ChartDataResult = {
   data: any[];
   colnames: string[];
   coltypes?: any[];
+};
+
+type RuntimeErrorPayload = {
+  message?: string;
+  error?: string;
+  errors?: Array<{ message?: string; error_type?: string }>;
 };
 
 type PersistedSelection = {
@@ -298,6 +320,46 @@ const Styles = styled.div<StyleProps>`
     margin: 0 0 3px;
     font-weight: 600;
     text-transform: uppercase;
+  }
+
+  .panel-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 3px;
+  }
+
+  .layout-toggle {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(203, 213, 225, 0.95);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+    flex: 0 0 auto;
+  }
+
+  .layout-toggle-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #475569;
+    padding: 4px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.16s ease, color 0.16s ease;
+    white-space: nowrap;
+  }
+
+  .layout-toggle-btn + .layout-toggle-btn {
+    border-left: 1px solid rgba(226, 232, 240, 0.95);
+  }
+
+  .layout-toggle-btn.active {
+    background: ${({ headerBg }) => headerBg || '#203247'};
+    color: ${({ headerTextColor }) => headerTextColor || '#fff'};
   }
 
   .hint {
@@ -709,6 +771,11 @@ const Styles = styled.div<StyleProps>`
     height: ${({ headerRowHeight }) => `${headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
   }
 
+  thead tr.metric-header-row {
+    height: ${({ metricHeaderRowHeight, headerRowHeight }) =>
+      `${metricHeaderRowHeight ?? headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+  }
+
   thead th {
     background: ${({ headerBg }) => headerBg || '#203247'};
     color: ${({ headerTextColor }) => headerTextColor || '#fff'};
@@ -727,6 +794,16 @@ const Styles = styled.div<StyleProps>`
     background-clip: padding-box;
   }
 
+  thead tr.metric-header-row th {
+    height: ${({ metricHeaderRowHeight, headerRowHeight }) =>
+      `${metricHeaderRowHeight ?? headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    min-height: ${({ metricHeaderRowHeight, headerRowHeight }) =>
+      `${metricHeaderRowHeight ?? headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    max-height: ${({ metricHeaderRowHeight, headerRowHeight }) =>
+      `${metricHeaderRowHeight ?? headerRowHeight ?? HEADER_ROW_HEIGHT}px`};
+    vertical-align: bottom;
+  }
+
   thead tr:nth-child(1) th {
     top: 0;
     z-index: 24;
@@ -742,6 +819,42 @@ const Styles = styled.div<StyleProps>`
     z-index: 22;
   }
 
+  .column-header-cell {
+    min-width: ${({ columnHeaderTiltDeg }) => (columnHeaderTiltDeg ? '28px' : 'unset')};
+    padding-left: ${({ columnHeaderTiltDeg, compactDisplay }) =>
+      columnHeaderTiltDeg ? (compactDisplay ? '4px' : '6px') : undefined};
+    padding-right: ${({ columnHeaderTiltDeg, compactDisplay }) =>
+      columnHeaderTiltDeg ? (compactDisplay ? '4px' : '6px') : undefined};
+    text-align: center;
+    vertical-align: bottom;
+  }
+
+  .column-header-content-wrap {
+    display: flex;
+    align-items: ${({ excelStyleDiagonalHeaders }) =>
+      excelStyleDiagonalHeaders ? 'flex-end' : 'flex-end'};
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    position: relative;
+  }
+
+  .column-header-content {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  .column-header-content.tilted {
+    transform: ${({ columnHeaderTiltDeg }) => `rotate(-${columnHeaderTiltDeg ?? 0}deg)`};
+    transform-origin: ${({ excelStyleDiagonalHeaders }) =>
+      excelStyleDiagonalHeaders ? 'center bottom' : 'center center'};
+    translate: ${({ excelStyleDiagonalHeaders }) =>
+      excelStyleDiagonalHeaders ? '0 2px' : '0 0'};
+  }
+
   .sticky-first {
     position: sticky !important;
     left: 0;
@@ -752,8 +865,22 @@ const Styles = styled.div<StyleProps>`
     box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
   }
 
+  .sticky-second {
+    position: sticky !important;
+    left: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    z-index: 24 !important;
+    width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    min-width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    max-width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
+  }
+
   thead .sticky-first {
     z-index: 32 !important;
+  }
+
+  thead .sticky-second {
+    z-index: 31 !important;
   }
 
   tbody td {
@@ -769,8 +896,27 @@ const Styles = styled.div<StyleProps>`
     position: sticky;
     left: 0;
     z-index: 10;
+    width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    min-width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    max-width: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
     background: rgba(255,255,255,0.98);
     box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
+    overflow: hidden;
+  }
+
+  tbody td.metric-label-cell {
+    position: sticky;
+    left: ${({ firstColumnWidth }) => `${firstColumnWidth ?? FIRST_COL_WIDTH}px`};
+    z-index: 9;
+    width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    min-width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    max-width: ${({ metricLabelColumnWidth }) => `${metricLabelColumnWidth ?? 180}px`};
+    background: rgba(255,255,255,0.98);
+    box-shadow: 1px 0 0 rgba(226, 232, 240, 0.95);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
   }
 
   tbody {
@@ -810,6 +956,10 @@ const Styles = styled.div<StyleProps>`
     background: ${({ subtotalBg }) => subtotalBg || '#edf5ff'};
   }
 
+  .subtotal-row td.metric-label-cell {
+    background: ${({ subtotalBg }) => subtotalBg || '#f1f7ff'};
+  }
+
   .total-row td {
     background: ${({ grandTotalBg }) => grandTotalBg || '#203247'};
     color: #fff;
@@ -823,6 +973,28 @@ const Styles = styled.div<StyleProps>`
     text-align: center;
     margin-right: 4px;
     color: ${({ expandColor }) => expandColor || '#64748b'};
+  }
+
+  .row-label-cell {
+    overflow: hidden;
+  }
+
+  .row-label-content {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .row-label-indent {
+    flex: 0 0 auto;
+  }
+
+  .row-label-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .empty,
@@ -869,6 +1041,30 @@ function getMetricRawValue(record: Record<string, any>, metric: MetricDef) {
   }
 
   return undefined;
+}
+
+function normalizeMetricValue(raw: any): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : null;
+  }
+
+  const numericValue = Number(raw);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function sumFiniteValues(values: Array<number | null | undefined>) {
+  let sum = 0;
+  let hasValue = false;
+
+  values.forEach(value => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      sum += value;
+      hasValue = true;
+    }
+  });
+
+  return hasValue ? sum : null;
 }
 
 function toBoolean(value: unknown, defaultValue = true): boolean {
@@ -1433,12 +1629,8 @@ function aggregateNode(
 
     metrics.forEach(metric => {
       const raw = getMetricRawValue(item, metric);
-      const num =
-        typeof raw === 'number'
-          ? raw
-          : raw === null || raw === undefined || raw === ''
-            ? 0
-            : Number(raw) || 0;
+      const num = normalizeMetricValue(raw);
+      if (num === null) return;
       if (!Array.isArray((agg[colKey] as any)[`${metric.key}__values`])) {
         (agg[colKey] as any)[`${metric.key}__values`] = [];
       }
@@ -1497,7 +1689,7 @@ function aggregateNode(
         : [];
       const rule = getMetricSummaryRule(metric, metricSummaryMap);
       const mode = inferSummaryMode(rule, kind);
-      agg[col.key][metric.key] = applySummaryMode(values, mode);
+      agg[col.key][metric.key] = values.length ? applySummaryMode(values, mode) : null;
       delete (agg[col.key] as any)[`${metric.key}__values`];
     });
   });
@@ -1945,6 +2137,27 @@ function MetricSelector({
   );
 }
 
+function MetricsLayoutToggle({ value, onChange }: MetricsLayoutToggleProps) {
+  return (
+    <div className="layout-toggle" role="group" aria-label="Расположение метрик">
+      <button
+        type="button"
+        className={`layout-toggle-btn ${value === 'columns' ? 'active' : ''}`}
+        onClick={() => onChange('columns')}
+      >
+        В столбцах
+      </button>
+      <button
+        type="button"
+        className={`layout-toggle-btn ${value === 'rows' ? 'active' : ''}`}
+        onClick={() => onChange('rows')}
+      >
+        В строках
+      </button>
+    </div>
+  );
+}
+
 export default function CustomPivotTable(props: Props) {
   const {
     data = [],
@@ -1976,6 +2189,12 @@ export default function CustomPivotTable(props: Props) {
     colOrder = 'key_a_to_z',
     rowSortSql,
     colSortSql,
+    tableViewMode = 'pivot',
+    metricsLayout = 'columns',
+    showMetricsLayoutToggle = false,
+    transposeTable = false,
+    columnHeaderTiltPercent = 0,
+    excelStyleDiagonalHeaders = false,
     defaultExpandDepth = 0,
     numberFormatDigits = 2,
     numberFormat,
@@ -2035,6 +2254,14 @@ export default function CustomPivotTable(props: Props) {
     );
   }, [width, resolvedSidebarWidthPercent]);
   const isNarrowSidebar = resolvedSidebarWidth < 260;
+  const isClassicTableMode = tableViewMode === 'classic';
+  const isTransposed = toBoolean(transposeTable, false);
+  const normalizedColumnHeaderTiltPercent = Math.max(
+    0,
+    Math.min(100, Number(columnHeaderTiltPercent) || 0),
+  );
+  const columnHeaderTiltDeg = Math.round(normalizedColumnHeaderTiltPercent * 0.75);
+  const useExcelStyleDiagonalHeaders = columnHeaderTiltDeg > 0 && excelStyleDiagonalHeaders;
 
   const availableDimensions = useMemo(() => {
     const merged = [...(selectableDimensions || []), ...(rows || []), ...(columns || [])];
@@ -2070,12 +2297,16 @@ export default function CustomPivotTable(props: Props) {
   const [columnFields, setColumnFields] = useState<FieldDef[]>(columns || []);
   const [activeMetricKeys, setActiveMetricKeys] = useState<string[]>(defaultMetricKeys);
   const [metricSearch, setMetricSearch] = useState('');
+  const [runtimeMetricsLayout, setRuntimeMetricsLayout] = useState<'columns' | 'rows'>(
+    metricsLayout === 'rows' ? 'rows' : 'columns',
+  );
   const [appliedRowFields, setAppliedRowFields] = useState<FieldDef[]>(rows || []);
   const [appliedColumnFields, setAppliedColumnFields] = useState<FieldDef[]>(columns || []);
   const [appliedMetricKeys, setAppliedMetricKeys] = useState<string[]>(defaultMetricKeys);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [queryData, setQueryData] = useState<any[]>([]);
   const [runtimeQuery, setRuntimeQuery] = useState('');
+  const [runtimeError, setRuntimeError] = useState('');
   const [isRuntimeRowLimitReached, setIsRuntimeRowLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const requestVersionRef = useRef(0);
@@ -2165,6 +2396,10 @@ export default function CustomPivotTable(props: Props) {
   }, [rows, columns]);
 
   useEffect(() => {
+    setRuntimeMetricsLayout(metricsLayout === 'rows' ? 'rows' : 'columns');
+  }, [metricsLayout]);
+
+  useEffect(() => {
     const nextMetricKeys = (metrics || []).map(metric => metric.key);
     setActiveMetricKeys(prev => {
       const filtered = prev.filter(metricKey => nextMetricKeys.includes(metricKey));
@@ -2189,6 +2424,29 @@ export default function CustomPivotTable(props: Props) {
     () => metrics.filter(metric => appliedMetricKeys.includes(metric.key)),
     [metrics, appliedMetricKeys],
   );
+  const resolvedMetricsLayout = runtimeMetricsLayout === 'rows' ? 'rows' : 'columns';
+  const metricsOnRows = !isClassicTableMode && resolvedMetricsLayout === 'rows';
+  const displayRowFields = useMemo(
+    () => (isTransposed ? appliedColumnFields : appliedRowFields),
+    [isTransposed, appliedColumnFields, appliedRowFields],
+  );
+  const displayColumnFields = useMemo(
+    () => (isTransposed ? appliedRowFields : appliedColumnFields),
+    [isTransposed, appliedRowFields, appliedColumnFields],
+  );
+  const displayRowOrder = isTransposed ? colOrder : rowOrder;
+  const displayColOrder = isTransposed ? rowOrder : colOrder;
+  const displayRowSortSql = isTransposed ? colSortSql : rowSortSql;
+  const displayColSortSql = isTransposed ? rowSortSql : colSortSql;
+  const classicDimensionFields = useMemo(
+    () =>
+      Array.from(
+        new Map(
+          [...appliedRowFields, ...appliedColumnFields].map(field => [field.key, field] as const),
+        ).values(),
+      ),
+    [appliedRowFields, appliedColumnFields],
+  );
   const filteredMetrics = useMemo(() => {
     const normalizedSearch = metricSearch.trim().toLowerCase();
     if (!normalizedSearch) return metrics;
@@ -2212,11 +2470,13 @@ export default function CustomPivotTable(props: Props) {
       ) {
         setQueryData([]);
         setRuntimeQuery('');
+        setRuntimeError('');
         setIsRuntimeRowLimitReached(false);
         return;
       }
 
       setIsLoading(true);
+      setRuntimeError('');
 
       try {
         const queryContext = buildRuntimePivotQueryContext(formData, {
@@ -2226,6 +2486,7 @@ export default function CustomPivotTable(props: Props) {
               columnFields: appliedColumnFields.map(
                 field => field.queryField || field.queryKey || field.key,
               ),
+              metrics: appliedMetrics.map(metric => metric.queryMetric || metric.key),
               metricKeys: appliedMetrics.map(metric => metric.key),
             },
           },
@@ -2240,17 +2501,35 @@ export default function CustomPivotTable(props: Props) {
 
         const result = (json as any)?.result as ChartDataResult | undefined;
         const fetchedData = Array.isArray(result?.data) ? result.data : [];
+        const fetchedColnames = Array.isArray(result?.colnames) ? result.colnames.map(String) : [];
+        const normalizedFetchedData = normalizeFetchedRecords(
+          fetchedData,
+          fetchedColnames,
+          appliedRowFields,
+          appliedColumnFields,
+          appliedMetrics,
+        );
         const runtimeRowLimit = Number((queryContext as any)?.queries?.[0]?.row_limit ?? 0);
         if (!cancelled && requestVersionRef.current === requestVersion) {
-          setQueryData(fetchedData);
+          setQueryData(normalizedFetchedData);
           setRuntimeQuery(typeof (result as any)?.query === 'string' ? (result as any).query : '');
+          setRuntimeError('');
           setIsRuntimeRowLimitReached(
             Boolean(runtimeRowLimit) && fetchedData.length >= runtimeRowLimit,
           );
         }
-      } catch {
+      } catch (error) {
         if (!cancelled && requestVersionRef.current === requestVersion) {
+          const errorPayload = (error as any)?.response?.json as RuntimeErrorPayload | undefined;
+          const nextError =
+            errorPayload?.message ||
+            errorPayload?.error ||
+            errorPayload?.errors?.map(item => item.message).find(Boolean) ||
+            (error as Error)?.message ||
+            'Не удалось выполнить runtime-запрос для pivot-таблицы.';
           setQueryData([]);
+          setRuntimeQuery('');
+          setRuntimeError(nextError);
           setIsRuntimeRowLimitReached(false);
         }
       } finally {
@@ -2271,27 +2550,27 @@ export default function CustomPivotTable(props: Props) {
     () =>
       buildHierarchyState(
         queryData,
-        appliedRowFields,
-        appliedColumnFields,
+        displayRowFields,
+        displayColumnFields,
         appliedMetrics,
         nullLabel,
         metricSummarySql,
-        rowOrder,
-        colOrder,
-        rowSortSql,
-        colSortSql,
+        displayRowOrder,
+        displayColOrder,
+        displayRowSortSql,
+        displayColSortSql,
       ),
     [
       queryData,
-      appliedRowFields,
-      appliedColumnFields,
+      displayRowFields,
+      displayColumnFields,
       appliedMetrics,
       nullLabel,
       metricSummarySql,
-      rowOrder,
-      colOrder,
-      rowSortSql,
-      colSortSql,
+      displayRowOrder,
+      displayColOrder,
+      displayRowSortSql,
+      displayColSortSql,
     ],
   );
 
@@ -2340,14 +2619,21 @@ export default function CustomPivotTable(props: Props) {
     appliedMetrics.forEach(metric => {
       const vals: number[] = [];
 
-      visibleNodes.forEach(node => {
-        pivotCols.forEach(col => {
-          const value = node.agg[col.key]?.[metric.key];
-          if (typeof value === 'number' && !Number.isNaN(value)) {
-            vals.push(value);
-          }
+      if (isClassicTableMode) {
+        queryData.forEach(record => {
+          const numericValue = normalizeMetricValue(getMetricRawValue(record, metric));
+          if (numericValue !== null) vals.push(numericValue);
         });
-      });
+      } else {
+        visibleNodes.forEach(node => {
+          pivotCols.forEach(col => {
+            const value = node.agg[col.key]?.[metric.key];
+            if (typeof value === 'number' && Number.isFinite(value)) {
+              vals.push(value);
+            }
+          });
+        });
+      }
 
       if (!vals.length) {
         ranges[metric.key] = { min: 0, max: 0, maxAbs: 0 };
@@ -2359,7 +2645,7 @@ export default function CustomPivotTable(props: Props) {
     });
 
     return ranges;
-  }, [appliedMetrics, visibleNodes, pivotCols]);
+  }, [appliedMetrics, isClassicTableMode, pivotCols, queryData, visibleNodes]);
 
   const numberFormatter = useMemo(() => {
     const format = typeof numberFormat === 'string' ? numberFormat.trim() : '';
@@ -2414,7 +2700,7 @@ export default function CustomPivotTable(props: Props) {
 
     return visibleNodes.reduce<Record<string, ReturnType<typeof getNumberFormatter> | undefined>>(
       (acc, node) => {
-        const rowContext = buildRowContext(node, appliedRowFields, appliedMetrics, grandAgg);
+        const rowContext = buildRowContext(node, displayRowFields, appliedMetrics, grandAgg);
         const matchedRule = [...rowFormatMatchers]
           .reverse()
           .find(rule => rule.matches(rowContext));
@@ -2430,16 +2716,37 @@ export default function CustomPivotTable(props: Props) {
       },
       {},
     );
-  }, [visibleNodes, appliedRowFields, appliedMetrics, grandAgg, rowFormatMatchers]);
+  }, [visibleNodes, displayRowFields, appliedMetrics, grandAgg, rowFormatMatchers]);
 
   const firstColumnWidth = useMemo(() => {
     const fontSize = compactDisplay ? 11 : 12;
     const font = `500 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-    const headerLabel = appliedRowFields.length
-      ? appliedRowFields.map(field => field.label).join(' → ')
-      : 'Строки';
+    const headerLabel = isClassicTableMode
+      ? classicDimensionFields[0]?.label || 'Поле'
+      : displayRowFields.length
+        ? displayRowFields.map(field => field.label).join(' → ')
+        : 'Строки';
 
     let widest = measureTextWidth(headerLabel, font) + 24;
+
+    if (isClassicTableMode) {
+      const firstField = classicDimensionFields[0];
+      if (!firstField) {
+        return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
+      }
+
+      queryData.forEach(record => {
+        const rawValue = getFieldRawValue(record, firstField);
+        widest = Math.max(widest, measureTextWidth(normalizeValue(rawValue, nullLabel), font) + 24);
+      });
+
+      return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
+    }
+
+    const pivotHeaderLabel = displayRowFields.length
+      ? displayRowFields.map(field => field.label).join(' → ')
+      : 'Строки';
+    widest = Math.max(widest, measureTextWidth(pivotHeaderLabel, font) + 24);
 
     visibleNodes.forEach(node => {
       const rowWidth =
@@ -2450,13 +2757,100 @@ export default function CustomPivotTable(props: Props) {
     });
 
     return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
-  }, [compactDisplay, appliedRowFields, visibleNodes]);
+  }, [classicDimensionFields, compactDisplay, displayRowFields, isClassicTableMode, nullLabel, queryData, visibleNodes]);
+  const metricLabelColumnWidth = useMemo(() => {
+    if (!metricsOnRows) return 180;
+
+    const fontSize = compactDisplay ? 11 : 12;
+    const font = `600 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    let widest = measureTextWidth('Значения', font) + 24;
+
+    appliedMetrics.forEach(metric => {
+      widest = Math.max(widest, measureTextWidth(metric.label, font) + 24);
+    });
+
+    return Math.max(120, Math.min(260, Math.ceil(widest)));
+  }, [appliedMetrics, compactDisplay, metricsOnRows]);
 
   const headerRowHeight = compactDisplay ? HEADER_ROW_HEIGHT_COMPACT : HEADER_ROW_HEIGHT;
+  const metricHeaderRowHeight = useMemo(() => {
+    if (!columnHeaderTiltDeg) return headerRowHeight;
+
+    const candidateLabels = [
+      ...pivotCols.map(col => formatPivotColumnValues(col, displayColumnFields)),
+      ...appliedMetrics.map(metric => metric.label),
+    ];
+    const longestLabelLength = candidateLabels.reduce(
+      (max, label) => Math.max(max, label.length),
+      0,
+    );
+    const estimatedExtraHeight = Math.round(
+      ((compactDisplay ? 3.8 : 4.8) * longestLabelLength * columnHeaderTiltDeg) / 90,
+    );
+
+    return Math.max(
+      headerRowHeight,
+      Math.min(160, headerRowHeight + 8 + estimatedExtraHeight),
+    );
+  }, [
+    appliedMetrics,
+    columnHeaderTiltDeg,
+    compactDisplay,
+    displayColumnFields,
+    headerRowHeight,
+    pivotCols,
+  ]);
+  const getTiltedHeaderCellWidth = (label: string) => {
+    if (!columnHeaderTiltDeg) return undefined;
+
+    const fontSize = compactDisplay ? 11 : 12;
+    const font = `700 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const labelWidth = measureTextWidth(label, font);
+    const labelHeight = fontSize * 1.2;
+    const angle = (columnHeaderTiltDeg * Math.PI) / 180;
+    const projectedWidth = useExcelStyleDiagonalHeaders
+      ? Math.abs(labelHeight * Math.sin(angle)) + Math.max(0, labelWidth * Math.cos(angle) * 0.72)
+      : Math.abs(labelWidth * Math.cos(angle)) + Math.abs(labelHeight * Math.sin(angle));
+    const padding = useExcelStyleDiagonalHeaders
+      ? compactDisplay
+        ? 6
+        : 8
+      : compactDisplay
+        ? 10
+        : 14;
+
+    return Math.max(useExcelStyleDiagonalHeaders ? 22 : 28, Math.ceil(projectedWidth + padding));
+  };
+  const renderColumnHeaderContent = (label: string) => (
+    <span className="column-header-content-wrap">
+      <span className={`column-header-content ${columnHeaderTiltDeg ? 'tilted' : ''}`}>
+        {label}
+      </span>
+    </span>
+  );
+  const classicRowFormatterMap = useMemo(() => {
+    const formatterCache: Record<string, ReturnType<typeof getNumberFormatter>> = {};
+
+    return queryData.map(record => {
+      const matchedRule = [...rowFormatMatchers]
+        .reverse()
+        .find(rule => rule.matches(record));
+
+      if (!matchedRule?.d3Format) {
+        return undefined;
+      }
+
+      if (!formatterCache[matchedRule.d3Format]) {
+        formatterCache[matchedRule.d3Format] = getNumberFormatter(matchedRule.d3Format);
+      }
+      return formatterCache[matchedRule.d3Format];
+    });
+  }, [queryData, rowFormatMatchers]);
 
   const formatValue = (value: any, metricKey?: string, rowFormatter?: ReturnType<typeof getNumberFormatter>) => {
-    if (value === null || value === undefined || Number.isNaN(value)) return '—';
+    if (value === null || value === undefined) return '—';
     if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return '—';
       if (rowFormatter) {
         return rowFormatter(value);
       }
@@ -2472,6 +2866,12 @@ export default function CustomPivotTable(props: Props) {
         maximumFractionDigits: numberFormatDigits,
       });
     }
+    if (
+      typeof value === 'string' &&
+      ['nan', 'infinity', '-infinity', 'inf', '-inf'].includes(value.trim().toLowerCase())
+    ) {
+      return '—';
+    }
     return String(value);
   };
 
@@ -2480,29 +2880,33 @@ export default function CustomPivotTable(props: Props) {
     null;
 
   const getNodeTotal = (node: LoadedNode) =>
-    Object.keys(node.hasChildren && node.subtotalAgg ? node.subtotalAgg : node.agg).reduce(
-      (sum, colKey) =>
-        sum +
-        appliedMetrics.reduce(
-          (metricSum, metric) =>
-            metricSum +
-            ((node.hasChildren && node.subtotalAgg ? node.subtotalAgg[colKey]?.[metric.key] : node.agg[colKey]?.[metric.key]) || 0),
-          0,
+    sumFiniteValues(
+      Object.keys(node.hasChildren && node.subtotalAgg ? node.subtotalAgg : node.agg).flatMap(colKey =>
+        appliedMetrics.map(metric =>
+          node.hasChildren && node.subtotalAgg
+            ? node.subtotalAgg[colKey]?.[metric.key]
+            : node.agg[colKey]?.[metric.key],
         ),
-      0,
+      ),
+    );
+  const getNodeMetricTotal = (node: LoadedNode, metricKey: string) =>
+    sumFiniteValues(
+      Object.keys(node.hasChildren && node.subtotalAgg ? node.subtotalAgg : node.agg).map(colKey =>
+        node.hasChildren && node.subtotalAgg
+          ? node.subtotalAgg[colKey]?.[metricKey]
+          : node.agg[colKey]?.[metricKey],
+      ),
     );
 
-  const calculateColTotal = (col: PivotCol, metricKey: string) => grandAgg[col.key]?.[metricKey] || 0;
+  const calculateColTotal = (col: PivotCol, metricKey: string) => grandAgg[col.key]?.[metricKey] ?? null;
+  const calculateGrandMetricTotal = (metricKey: string) =>
+    sumFiniteValues(Object.keys(grandAgg).map(colKey => grandAgg[colKey]?.[metricKey]));
 
   const calculateGrandTotal = () =>
-    Object.keys(grandAgg).reduce(
-      (sum, colKey) =>
-        sum +
-        appliedMetrics.reduce(
-          (metricSum, metric) => metricSum + (grandAgg[colKey]?.[metric.key] || 0),
-          0,
-        ),
-      0,
+    sumFiniteValues(
+      Object.keys(grandAgg).flatMap(colKey =>
+        appliedMetrics.map(metric => grandAgg[colKey]?.[metric.key]),
+      ),
     );
 
   const grandTotalFormatter = useMemo(() => {
@@ -2657,7 +3061,7 @@ export default function CustomPivotTable(props: Props) {
   };
 
   const getCellStyle = (value: number | null, metricKey: string): React.CSSProperties => {
-    if (value === null || value === undefined || Number.isNaN(value)) return {};
+    if (value === null || value === undefined || Number.isNaN(value) || !Number.isFinite(value)) return {};
     const style: React.CSSProperties = {};
     const range = metricRanges[metricKey];
     const metricDef = appliedMetrics.find(metric => metric.key === metricKey);
@@ -2715,24 +3119,90 @@ export default function CustomPivotTable(props: Props) {
   };
 
   const renderRows = (): React.ReactNode[] =>
-    visibleNodes.map(node => {
+    visibleNodes.flatMap(node => {
       const isSubtotalRow = node.hasChildren && showSubtotals;
       const isExpandedNow = expanded.has(node.pathKey);
       const rowFormatter = rowFormatterMap[node.pathKey];
 
+      if (metricsOnRows) {
+        return appliedMetrics.map((metric, metricIndex) => (
+          <tr
+            key={`${node.pathKey}-${metric.key}`}
+            className={`row-header ${isSubtotalRow ? 'subtotal-row' : ''}`}
+          >
+            {metricIndex === 0 ? (
+              <td
+                rowSpan={appliedMetrics.length}
+                className="row-label-cell"
+                onClick={() => toggleExpand(node)}
+                style={{ cursor: node.hasChildren ? 'pointer' : 'default' }}
+              >
+                <span className="row-label-content">
+                  <span
+                    className="row-label-indent"
+                    style={{ display: 'inline-block', width: node.level * 18 }}
+                  />
+                  {node.hasChildren ? (
+                    <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
+                  ) : (
+                    <span className="expand-icon">•</span>
+                  )}
+                  <span className="row-label-text" title={node.pathValues.join(' | ') || node.name}>
+                    {node.name}
+                  </span>
+                </span>
+              </td>
+            ) : null}
+
+            <td className="metric-label-cell" title={metric.label}>
+              {metric.label}
+            </td>
+
+            {pivotCols.map(col => {
+              const value = getNodeAggValue(node, col.key, metric.key);
+              return (
+                <td
+                  key={`${node.pathKey}-${col.key}-${metric.key}`}
+                  className="metric-value"
+                  style={getCellStyle(value, metric.key)}
+                >
+                  {showSubtotals || node.isLeaf
+                    ? formatValue(value, metric.key, rowFormatter)
+                    : '—'}
+                </td>
+              );
+            })}
+
+            {showGrandTotals && showRowTotals && (
+              <td className="metric-value">
+                {formatValue(getNodeMetricTotal(node, metric.key), metric.key, rowFormatter)}
+              </td>
+            )}
+          </tr>
+        ));
+      }
+
       return (
         <tr key={node.pathKey} className={`row-header ${isSubtotalRow ? 'subtotal-row' : ''}`}>
           <td
+            className="row-label-cell"
             onClick={() => toggleExpand(node)}
             style={{ cursor: node.hasChildren ? 'pointer' : 'default' }}
           >
-            <span style={{ display: 'inline-block', width: node.level * 18 }} />
-            {node.hasChildren ? (
-              <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
-            ) : (
-              <span className="expand-icon">•</span>
-            )}
-            {node.name}
+            <span className="row-label-content">
+              <span
+                className="row-label-indent"
+                style={{ display: 'inline-block', width: node.level * 18 }}
+              />
+              {node.hasChildren ? (
+                <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
+              ) : (
+                <span className="expand-icon">•</span>
+              )}
+              <span className="row-label-text" title={node.pathValues.join(' | ') || node.name}>
+                {node.name}
+              </span>
+            </span>
           </td>
 
           {pivotCols.map(col => (
@@ -2760,6 +3230,52 @@ export default function CustomPivotTable(props: Props) {
         </tr>
       );
     });
+  const renderClassicRows = (): React.ReactNode[] =>
+    queryData.map((record, index) => {
+      const rowFormatter = classicRowFormatterMap[index];
+
+      return (
+        <tr key={`classic-${index}`}>
+          {classicDimensionFields.map((field, fieldIndex) => {
+            const value = normalizeValue(getFieldRawValue(record, field), nullLabel);
+
+            if (fieldIndex === 0) {
+              return (
+                <td key={`${index}-${field.key}`} className="row-label-cell">
+                  <span className="row-label-content">
+                    <span className="row-label-text" title={String(value)}>
+                      {String(value)}
+                    </span>
+                  </span>
+                </td>
+              );
+            }
+
+            return <td key={`${index}-${field.key}`}>{String(value)}</td>;
+          })}
+
+          {appliedMetrics.map(metric => {
+            const rawValue = getMetricRawValue(record, metric);
+            const numericValue = normalizeMetricValue(rawValue);
+
+            return (
+              <td
+                key={`${index}-${metric.key}`}
+                className="metric-value"
+                style={getCellStyle(numericValue, metric.key)}
+              >
+                {formatValue(rawValue, metric.key, rowFormatter)}
+              </td>
+            );
+          })}
+        </tr>
+      );
+    });
+  const classicTableColSpan = Math.max(1, classicDimensionFields.length + appliedMetrics.length);
+  const pivotTableColSpan =
+    (metricsOnRows ? 2 : 1) +
+    pivotCols.length * (metricsOnRows ? 1 : Math.max(appliedMetrics.length, 1)) +
+    (showGrandTotals && showRowTotals ? 1 : 0);
 
   if (!metrics.length) {
     return (
@@ -2775,7 +3291,12 @@ export default function CustomPivotTable(props: Props) {
         compactDisplay={compactDisplay}
         showSidebar={resolvedShowSidebar}
         firstColumnWidth={firstColumnWidth}
+        metricLabelColumnWidth={metricLabelColumnWidth}
         headerRowHeight={headerRowHeight}
+        metricHeaderRowHeight={metricHeaderRowHeight}
+        columnHeaderTiltDeg={columnHeaderTiltDeg}
+        metricsOnRows={metricsOnRows}
+        excelStyleDiagonalHeaders={useExcelStyleDiagonalHeaders}
       >
         <div className="empty">Выберите хотя бы одну метрику в настройках графика.</div>
       </Styles>
@@ -2795,7 +3316,12 @@ export default function CustomPivotTable(props: Props) {
       compactDisplay={compactDisplay}
       showSidebar={resolvedShowSidebar}
       firstColumnWidth={firstColumnWidth}
+      metricLabelColumnWidth={metricLabelColumnWidth}
       headerRowHeight={headerRowHeight}
+      metricHeaderRowHeight={metricHeaderRowHeight}
+      columnHeaderTiltDeg={columnHeaderTiltDeg}
+      metricsOnRows={metricsOnRows}
+      excelStyleDiagonalHeaders={useExcelStyleDiagonalHeaders}
     >
       <div className="pivot-shell">
         <div
@@ -2839,6 +3365,12 @@ export default function CustomPivotTable(props: Props) {
             </details>
           ) : null}
 
+          {runtimeError ? (
+            <div className="runtime-warning">
+              {runtimeError}
+            </div>
+          ) : null}
+
           {isRuntimeRowLimitReached ? (
             <div className="runtime-warning">
               Результат уперся в ограничение по строкам запроса. Таблица может
@@ -2872,7 +3404,15 @@ export default function CustomPivotTable(props: Props) {
             </div>
 
             <div className="panel">
-              <div className="panel-title">Метрики</div>
+              <div className="panel-header-row">
+                <div className="panel-title">Метрики</div>
+                {showMetricsLayoutToggle && !isClassicTableMode ? (
+                  <MetricsLayoutToggle
+                    value={resolvedMetricsLayout}
+                    onChange={setRuntimeMetricsLayout}
+                  />
+                ) : null}
+              </div>
               <MetricSelector
                 metrics={filteredMetrics}
                 activeMetricKeys={activeMetricKeys}
@@ -2888,113 +3428,226 @@ export default function CustomPivotTable(props: Props) {
         <div className="content">
           <div className="table-scroll">
             <table>
-              <thead>
-                <tr>
-                  <th className="sticky-first">
-                    {appliedRowFields.length
-                      ? appliedRowFields.map(field => field.label).join(' → ')
-                      : 'Строки'}
-                  </th>
-
-                  {appliedMetrics.length > 0 && (
-                    <th colSpan={pivotCols.length * appliedMetrics.length}>
-                      {appliedColumnFields.length
-                        ? appliedColumnFields.map(field => field.label).join(' → ')
-                        : 'Значение'}
-                    </th>
-                  )}
-
-                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
-                </tr>
-
-                <tr>
-                  <th className="sticky-first" />
-                  {appliedMetrics.length > 0 && pivotCols.map(col => (
-                    <th key={`${col.key}-values`} colSpan={appliedMetrics.length}>
-                      {formatPivotColumnValues(col, appliedColumnFields)}
-                    </th>
-                  ))}
-                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
-                </tr>
-
-                <tr>
-                  <th className="sticky-first" />
-                  {appliedMetrics.length > 0 && pivotCols.map(col => (
-                    <React.Fragment key={`${col.key}-metric`}>
-                      {appliedMetrics.map(metric => (
-                        <th key={`${col.key}-${metric.key}`}>{metric.label}</th>
+              {isClassicTableMode ? (
+                <>
+                  <thead>
+                    <tr>
+                      {classicDimensionFields.map((field, index) => (
+                        <th key={field.key} className={index === 0 ? 'sticky-first' : undefined}>
+                          {field.label}
+                        </th>
                       ))}
-                    </React.Fragment>
-                  ))}
-                  {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
-                </tr>
-              </thead>
+                      {appliedMetrics.map(metric => (
+                        <th key={metric.key}>{metric.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
 
-              <tbody>
-                {!appliedMetrics.length ? (
-                  <tr>
-                    <td colSpan={1}>
-                      <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
-                    </td>
-                  </tr>
-                ) : isLoading ? (
-                  <tr>
-                    <td
-                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
-                    >
-                      <div className="table-placeholder">Загрузка агрегированных данных...</div>
-                    </td>
-                  </tr>
-                ) : appliedRowFields.length ? (
-                  renderRows()
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
-                    >
-                      <div className="table-placeholder">Выберите хотя бы одно поле в строки или столбцы.</div>
-                    </td>
-                  </tr>
-                )}
-
-                {appliedMetrics.length > 0 && appliedRowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
-                  <tr className="total-row">
-                    <td><strong>Общий итог</strong></td>
-
-                    {pivotCols.map(col => (
-                      <React.Fragment key={`${col.key}-grand`}>
-                        {appliedMetrics.map(metric => (
-                          <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
-                            <strong>
-                              {formatValue(
-                                calculateColTotal(col, metric.key),
-                                metric.key,
-                                grandTotalFormatter,
-                              )}
-                            </strong>
-                          </td>
-                        ))}
-                      </React.Fragment>
-                    ))}
-
-                    {showRowTotals && (
-                      <td className="metric-value">
-                        <strong>{formatValue(calculateGrandTotal(), undefined, grandTotalFormatter)}</strong>
-                      </td>
+                  <tbody>
+                    {!appliedMetrics.length ? (
+                      <tr>
+                        <td colSpan={classicTableColSpan}>
+                          <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
+                        </td>
+                      </tr>
+                    ) : isLoading ? (
+                      <tr>
+                        <td colSpan={classicTableColSpan}>
+                          <div className="table-placeholder">Загрузка табличных данных...</div>
+                        </td>
+                      </tr>
+                    ) : classicDimensionFields.length ? (
+                      renderClassicRows()
+                    ) : (
+                      <tr>
+                        <td colSpan={classicTableColSpan}>
+                          <div className="table-placeholder">Выберите хотя бы одно поле в строки или столбцы.</div>
+                        </td>
+                      </tr>
                     )}
-                  </tr>
-                )}
 
-                {appliedMetrics.length > 0 && !isLoading && appliedRowFields.length && !visibleNodes.length && (
-                  <tr>
-                    <td
-                      colSpan={1 + pivotCols.length * Math.max(appliedMetrics.length, 1) + (showGrandTotals && showRowTotals ? 1 : 0)}
-                    >
-                      <div className="empty">Нет данных для выбранных фильтров.</div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
+                    {appliedMetrics.length > 0 && !isLoading && classicDimensionFields.length && !queryData.length && (
+                      <tr>
+                        <td colSpan={classicTableColSpan}>
+                          <div className="empty">Нет данных для выбранных фильтров.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </>
+              ) : (
+                <>
+                  <thead>
+                    <tr>
+                      <th className="sticky-first">
+                        {displayRowFields.length
+                          ? displayRowFields.map(field => field.label).join(' → ')
+                          : 'Строки'}
+                      </th>
+                      {metricsOnRows && <th className="sticky-second">Значения</th>}
+
+                      {appliedMetrics.length > 0 && (
+                        <th colSpan={pivotCols.length * (metricsOnRows ? 1 : appliedMetrics.length)}>
+                          {displayColumnFields.length
+                            ? displayColumnFields.map(field => field.label).join(' → ')
+                            : 'Значение'}
+                        </th>
+                      )}
+
+                      {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
+                    </tr>
+
+                    <tr>
+                      <th className="sticky-first" />
+                      {metricsOnRows && <th className="sticky-second" />}
+                      {appliedMetrics.length > 0 && pivotCols.map(col => (
+                        <th
+                          key={`${col.key}-values`}
+                          colSpan={metricsOnRows ? 1 : appliedMetrics.length}
+                          className="column-header-cell"
+                          style={
+                            columnHeaderTiltDeg && (metricsOnRows || appliedMetrics.length === 1)
+                              ? {
+                                  width: getTiltedHeaderCellWidth(
+                                    formatPivotColumnValues(col, displayColumnFields),
+                                  ),
+                                  minWidth: getTiltedHeaderCellWidth(
+                                    formatPivotColumnValues(col, displayColumnFields),
+                                  ),
+                                  maxWidth: getTiltedHeaderCellWidth(
+                                    formatPivotColumnValues(col, displayColumnFields),
+                                  ),
+                                }
+                              : undefined
+                          }
+                        >
+                          {renderColumnHeaderContent(formatPivotColumnValues(col, displayColumnFields))}
+                        </th>
+                      ))}
+                      {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
+                    </tr>
+
+                    {!metricsOnRows && (
+                      <tr className="metric-header-row">
+                        <th className="sticky-first" />
+                        {appliedMetrics.length > 0 && pivotCols.map(col => (
+                          <React.Fragment key={`${col.key}-metric`}>
+                            {appliedMetrics.map(metric => (
+                              <th
+                                key={`${col.key}-${metric.key}`}
+                                className="column-header-cell"
+                                style={
+                                  columnHeaderTiltDeg
+                                    ? {
+                                        width: getTiltedHeaderCellWidth(metric.label),
+                                        minWidth: getTiltedHeaderCellWidth(metric.label),
+                                        maxWidth: getTiltedHeaderCellWidth(metric.label),
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {renderColumnHeaderContent(metric.label)}
+                              </th>
+                            ))}
+                          </React.Fragment>
+                        ))}
+                        {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
+                      </tr>
+                    )}
+                  </thead>
+
+                  <tbody>
+                    {!appliedMetrics.length ? (
+                      <tr>
+                        <td colSpan={1}>
+                          <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
+                        </td>
+                      </tr>
+                    ) : isLoading ? (
+                      <tr>
+                        <td colSpan={pivotTableColSpan}>
+                          <div className="table-placeholder">Загрузка агрегированных данных...</div>
+                        </td>
+                      </tr>
+                    ) : displayRowFields.length ? (
+                      renderRows()
+                    ) : (
+                      <tr>
+                        <td colSpan={pivotTableColSpan}>
+                          <div className="table-placeholder">Выберите хотя бы одно поле в строки или столбцы.</div>
+                        </td>
+                      </tr>
+                    )}
+
+                    {appliedMetrics.length > 0 && displayRowFields.length && showGrandTotals && showColumnTotals && !!visibleNodes.length && (
+                      metricsOnRows ? (
+                        appliedMetrics.map((metric, metricIndex) => (
+                          <tr key={`grand-${metric.key}`} className="total-row">
+                            {metricIndex === 0 ? <td rowSpan={appliedMetrics.length}><strong>Общий итог</strong></td> : null}
+                            <td className="metric-label-cell"><strong>{metric.label}</strong></td>
+                            {pivotCols.map(col => (
+                              <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
+                                <strong>
+                                  {formatValue(
+                                    calculateColTotal(col, metric.key),
+                                    metric.key,
+                                    grandTotalFormatter,
+                                  )}
+                                </strong>
+                              </td>
+                            ))}
+                            {showRowTotals && (
+                              <td className="metric-value">
+                                <strong>
+                                  {formatValue(
+                                    calculateGrandMetricTotal(metric.key),
+                                    metric.key,
+                                    grandTotalFormatter,
+                                  )}
+                                </strong>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      ) : (
+                        <tr className="total-row">
+                          <td><strong>Общий итог</strong></td>
+
+                          {pivotCols.map(col => (
+                            <React.Fragment key={`${col.key}-grand`}>
+                              {appliedMetrics.map(metric => (
+                                <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
+                                  <strong>
+                                    {formatValue(
+                                      calculateColTotal(col, metric.key),
+                                      metric.key,
+                                      grandTotalFormatter,
+                                    )}
+                                  </strong>
+                                </td>
+                              ))}
+                            </React.Fragment>
+                          ))}
+
+                          {showRowTotals && (
+                            <td className="metric-value">
+                              <strong>{formatValue(calculateGrandTotal(), undefined, grandTotalFormatter)}</strong>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    )}
+
+                    {appliedMetrics.length > 0 && !isLoading && displayRowFields.length && !visibleNodes.length && (
+                      <tr>
+                        <td colSpan={pivotTableColSpan}>
+                          <div className="empty">Нет данных для выбранных фильтров.</div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </>
+              )}
             </table>
           </div>
         </div>

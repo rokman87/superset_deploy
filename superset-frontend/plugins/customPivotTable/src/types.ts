@@ -20,6 +20,12 @@ import { QueryFormData, TimeseriesDataRecord } from '@superset-ui/core';
 
 interface CustomPivotTableCustomizeProps {
   headerText: string;
+  transposeTable: boolean;
+  columnHeaderTiltPercent: number;
+  excelStyleDiagonalHeaders: boolean;
+  tableViewMode: 'pivot' | 'classic';
+  metricsLayout: 'columns' | 'rows';
+  showMetricsLayoutToggle: boolean;
 }
 
 export interface CustomPivotTableStylesProps {

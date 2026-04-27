@@ -221,6 +221,91 @@ const config: ControlPanelConfig = {
             },
           },
         ],
+        [
+          {
+            name: 'table_view_mode',
+            config: {
+              type: 'SelectControl',
+              freeForm: false,
+              label: t('Режим отображения'),
+              default: 'pivot',
+              renderTrigger: true,
+              choices: [
+                ['pivot', t('Pivot таблица')],
+                ['classic', t('Классическая таблица')],
+              ],
+              description: t('Переключает между pivot-видом и плоской табличной раскладкой'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'metrics_layout',
+            config: {
+              type: 'RadioButtonControl',
+              label: t('Метрики размещать'),
+              default: 'columns',
+              renderTrigger: true,
+              options: [
+                ['columns', t('В столбцах')],
+                ['rows', t('В строках')],
+              ],
+              description: t('Показывает метрики как отдельные столбцы или как отдельные строки внутри группы'),
+            },
+          },
+          {
+            name: 'show_metrics_layout_toggle',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Показывать переключатель в панели'),
+              default: false,
+              renderTrigger: true,
+              description: t('Разрешает менять расположение метрик прямо в левой панели чарта'),
+            },
+          },
+        ],
+        [
+          {
+            name: 'transpose_table',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Транспонировать таблицу'),
+              description: t('Меняет местами строки и столбцы только на уровне отображения'),
+              default: false,
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'column_header_tilt_percent',
+            config: {
+              type: 'SliderControl',
+              label: t('% наклона заголовков'),
+              description: t('Поворачивает подписи столбцов, чтобы уменьшить ширину таблицы'),
+              default: 0,
+              min: 0,
+              max: 100,
+              step: 5,
+              marks: {
+                0: '0%',
+                25: '25%',
+                50: '50%',
+                75: '75%',
+                100: '100%',
+              },
+              renderTrigger: true,
+            },
+          },
+          {
+            name: 'excel_style_diagonal_headers',
+            config: {
+              type: 'CheckboxControl',
+              label: t('Excel-style diagonal headers'),
+              description: t('Привязывает наклонённый текст к нижнему центру и плотнее упаковывает ширину колонок'),
+              default: false,
+              renderTrigger: true,
+            },
+          },
+        ],
       ],
     },
     {

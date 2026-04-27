@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from flask import Response, request
@@ -22,6 +23,18 @@ from superset.extensions import event_logger
 from superset.views.base_api import BaseSupersetApi, requires_json, statsd_metrics
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_json_value(value: Any) -> Any:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: sanitize_json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [sanitize_json_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [sanitize_json_value(item) for item in value]
+    return value
 
 
 class MyFirstPivotRestApi(BaseSupersetApi):
@@ -108,10 +121,10 @@ class MyFirstPivotRestApi(BaseSupersetApi):
         return self.response(
             200,
             result={
-                "data": first_query.get("data") or [],
-                "colnames": first_query.get("colnames") or [],
-                "coltypes": first_query.get("coltypes") or [],
-                "rowcount": first_query.get("rowcount"),
-                "query": first_query.get("query"),
+                "data": sanitize_json_value(first_query.get("data") or []),
+                "colnames": sanitize_json_value(first_query.get("colnames") or []),
+                "coltypes": sanitize_json_value(first_query.get("coltypes") or []),
+                "rowcount": sanitize_json_value(first_query.get("rowcount")),
+                "query": sanitize_json_value(first_query.get("query")),
             },
         )
