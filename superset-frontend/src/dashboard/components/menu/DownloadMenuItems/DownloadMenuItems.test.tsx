@@ -43,4 +43,5 @@ test('Should render menu items', () => {
 
   expect(screen.getByText('Export to PDF')).toBeInTheDocument();
   expect(screen.getByText('Download as Image')).toBeInTheDocument();
+  expect(screen.getByText('Сделать презентацию')).toBeInTheDocument();
 });

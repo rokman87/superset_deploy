@@ -36,6 +36,7 @@ import { useToasts } from 'src/components/MessageToasts/withToasts';
 import backgroundPdfImage from 'src/assets/images/background_pdf.png';
 import pdfUnicodeFont from 'src/assets/fonts/DejaVuSans.ttf';
 import { DownloadScreenshotFormat } from './types';
+import PresentationBuilderModal from './PresentationBuilderModal';
 
 type ExportSelection = {
   groupId: string;
@@ -261,6 +262,7 @@ const showExportSelectionDialog = (
 
     const card = document.createElement('div');
     card.style.width = 'min(760px, 100%)';
+    card.style.height = 'min(82vh, 820px)';
     card.style.maxHeight = 'min(82vh, 820px)';
     card.style.display = 'flex';
     card.style.flexDirection = 'column';
@@ -289,6 +291,7 @@ const showExportSelectionDialog = (
     toolbar.style.padding = '16px 24px 0';
     toolbar.style.display = 'grid';
     toolbar.style.gap = '12px';
+    toolbar.style.flexShrink = '0';
 
     const settingsCard = document.createElement('div');
     settingsCard.style.display = 'grid';
@@ -428,7 +431,10 @@ const showExportSelectionDialog = (
     list.style.padding = '16px 24px 24px';
     list.style.display = 'grid';
     list.style.gap = '4px';
+    list.style.flex = '1';
+    list.style.minHeight = '240px';
     list.style.overflow = 'auto';
+    list.style.overscrollBehavior = 'contain';
 
     const footer = document.createElement('div');
     footer.style.padding = '18px 24px 24px';
@@ -436,6 +442,7 @@ const showExportSelectionDialog = (
     footer.style.justifyContent = 'flex-end';
     footer.style.gap = '12px';
     footer.style.borderTop = '1px solid rgba(148, 163, 184, 0.18)';
+    footer.style.flexShrink = '0';
 
     const cancelButton = document.createElement('button');
     cancelButton.type = 'button';
@@ -979,18 +986,23 @@ const createProgressOverlay = (): ProgressOverlay => {
 
 const PDF_PAGE_LAYOUT = {
   landscape: {
-    height: 595.28,
-    width: 841.89,
+    height: 540,
+    width: 960,
   },
   portrait: {
-    height: 841.89,
-    width: 595.28,
+    height: 960,
+    width: 540,
   },
 } as const;
 
 type PdfOrientation = keyof typeof PDF_PAGE_LAYOUT;
 const PDF_UNICODE_FONT_FAMILY = 'DashboardPdfUnicode';
 let pdfFontBase64Promise: Promise<string> | null = null;
+
+const getPdfPageFormat = (orientation: PdfOrientation) => {
+  const { width, height } = PDF_PAGE_LAYOUT[orientation];
+  return [width, height] as [number, number];
+};
 
 const arrayBufferToBase64 = (buffer: ArrayBuffer) => {
   let binary = '';
@@ -1583,10 +1595,11 @@ export const useDownloadMenuItems = (
       let pdf: InstanceType<typeof jsPDF> | null = null;
 
       if (exportOptions.includeCoverPage) {
+        const coverOrientation: PdfOrientation = 'landscape';
         pdf = new jsPDF({
-          orientation: 'landscape',
+          orientation: coverOrientation,
           unit: 'pt',
-          format: 'a4',
+          format: getPdfPageFormat(coverOrientation),
           compress: true,
         });
         await renderCoverPage(pdf, exportOptions);
@@ -1626,11 +1639,11 @@ export const useDownloadMenuItems = (
           pdf = new jsPDF({
             orientation: pageOrientation,
             unit: 'pt',
-            format: 'a4',
+            format: getPdfPageFormat(pageOrientation),
             compress: true,
           });
         } else {
-          pdf.addPage('a4', pageOrientation);
+          pdf.addPage(getPdfPageFormat(pageOrientation), pageOrientation);
         }
 
         await ensurePdfUnicodeFont(pdf);
@@ -1700,6 +1713,16 @@ export const useDownloadMenuItems = (
           label: imageMenuItemTitle,
           onClick: (e: any) => onDownloadImage(e.domEvent),
         },
+    {
+      key: 'build-presentation',
+      label: (
+        <PresentationBuilderModal
+          triggerNode={<div>{t('Сделать презентацию')}</div>}
+          dashboardLayout={dashboardLayout}
+          dashboardTitle={dashboardTitle}
+        />
+      ),
+    },
   ];
 
   return {
