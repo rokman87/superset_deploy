@@ -37,7 +37,9 @@ import {
 import { postFormData } from 'src/explore/exploreUtils/formData';
 import { URL_PARAMS } from 'src/constants';
 import { enforceSharedLabelsColorsArray } from 'src/utils/colorScheme';
-import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
+import exportPivotExcel, {
+  exportCustomPivotRuntimeExcel,
+} from 'src/utils/downloadAsPivotExcel';
 
 import SliceHeader from '../../SliceHeader';
 import MissingChart from '../../MissingChart';
@@ -104,6 +106,7 @@ const SliceContainer = styled.div`
 `;
 
 const EMPTY_OBJECT = {};
+const CUSTOM_PIVOT_TABLE_VIZ_TYPE = 'customPivotTable';
 
 const Chart = props => {
   const dispatch = useDispatch();
@@ -378,6 +381,10 @@ const Chart = props => {
         slice_id: slice.slice_id,
         is_cached: isCached,
       });
+      if (format === 'xlsx' && slice.viz_type === CUSTOM_PIVOT_TABLE_VIZ_TYPE) {
+        exportCustomPivotRuntimeExcel(slice.slice_id, slice.slice_name);
+        return;
+      }
       exportChart({
         formData: isFullCSV ? { ...formData, row_limit: maxRows } : formData,
         resultType: isPivot ? 'post_processed' : 'full',

@@ -23,7 +23,8 @@ interface CustomPivotTableCustomizeProps {
   transposeTable: boolean;
   columnHeaderTiltPercent: number;
   excelStyleDiagonalHeaders: boolean;
-  tableViewMode: 'pivot' | 'classic';
+  dateTimeFormat?: string;
+  tableViewMode: 'pivot' | 'pivot_excel' | 'classic';
   metricsLayout: 'columns' | 'rows';
   showMetricsLayoutToggle: boolean;
 }

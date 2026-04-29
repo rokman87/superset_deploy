@@ -2,6 +2,9 @@ import { t } from '@superset-ui/core';
 import {
   ControlPanelConfig,
   D3_FORMAT_OPTIONS,
+  D3_TIME_FORMAT_DOCS,
+  D3_TIME_FORMAT_OPTIONS,
+  DEFAULT_TIME_FORMAT,
   sharedControls,
 } from '@superset-ui/chart-controls';
 
@@ -232,9 +235,12 @@ const config: ControlPanelConfig = {
               renderTrigger: true,
               choices: [
                 ['pivot', t('Pivot таблица')],
+                ['pivot_excel', t('Pivot Excel')],
                 ['classic', t('Классическая таблица')],
               ],
-              description: t('Переключает между pivot-видом и плоской табличной раскладкой'),
+              description: t(
+                'Переключает между pivot-видом, Excel-подобной раскладкой и плоской табличной раскладкой',
+              ),
             },
           },
         ],
@@ -443,6 +449,20 @@ const config: ControlPanelConfig = {
               default: 2,
               renderTrigger: true,
               choices: [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']],
+            },
+          },
+        ],
+        [
+          {
+            name: 'date_time_format',
+            config: {
+              type: 'SelectControl',
+              freeForm: true,
+              label: t('Формат дат в таблице'),
+              default: DEFAULT_TIME_FORMAT,
+              choices: D3_TIME_FORMAT_OPTIONS,
+              description: D3_TIME_FORMAT_DOCS,
+              renderTrigger: true,
             },
           },
         ],

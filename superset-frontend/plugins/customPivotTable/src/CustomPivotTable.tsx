@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getNumberFormatter, styled, SupersetClient } from '@superset-ui/core';
+import {
+  getNumberFormatter,
+  getTimeFormatter,
+  styled,
+  SupersetClient,
+} from '@superset-ui/core';
 import { buildRuntimePivotQueryContext } from './plugin/buildQuery';
 
 const HEADER_ROW_HEIGHT = 42;
@@ -148,7 +153,7 @@ type Props = {
   colOrder?: PivotSortMode;
   rowSortSql?: string;
   colSortSql?: string;
-  tableViewMode?: 'pivot' | 'classic';
+  tableViewMode?: 'pivot' | 'pivot_excel' | 'classic';
   metricsLayout?: 'columns' | 'rows';
   showMetricsLayoutToggle?: boolean;
   transposeTable?: boolean;
@@ -157,6 +162,7 @@ type Props = {
   defaultExpandDepth?: number;
   numberFormatDigits?: number;
   numberFormat?: string;
+  dateTimeFormat?: string;
   nullLabel?: string;
   headerBg?: string;
   headerTextColor?: string;
@@ -212,8 +218,29 @@ type ChartDataResult = {
 type RuntimeErrorPayload = {
   message?: string;
   error?: string;
-  errors?: Array<{ message?: string; error_type?: string }>;
+  errors?: Array<{
+    message?: string;
+    error?: string;
+    error_type?: string;
+    extra?: Record<string, any>;
+  }>;
+  result?: {
+    message?: string;
+    error?: string;
+  };
 };
+
+declare global {
+  interface Window {
+    customPivotTableRuntimeExports?: Record<
+      string,
+      {
+        data?: Record<string, unknown>[];
+        colnames?: string[];
+      }
+    >;
+  }
+}
 
 type PersistedSelection = {
   version?: number;
@@ -417,6 +444,9 @@ const Styles = styled.div<StyleProps>`
     color: #92400e;
     font-size: 11px;
     line-height: 1.45;
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
   }
 
   .runtime-query {
@@ -990,6 +1020,11 @@ const Styles = styled.div<StyleProps>`
     flex: 0 0 auto;
   }
 
+  .pivot-excel-row-label-cell {
+    min-width: 140px;
+    max-width: 240px;
+  }
+
   .row-label-text {
     min-width: 0;
     overflow: hidden;
@@ -1005,11 +1040,50 @@ const Styles = styled.div<StyleProps>`
   }
 `;
 
-function normalizeValue(value: any, nullLabel: string) {
+type DateValueFormatter = (value: Date | number | string) => string;
+
+function isDateLikeString(value: string) {
+  return /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(
+    value.trim(),
+  );
+}
+
+function normalizeDateLikeValue(value: any, dateFormatter?: DateValueFormatter) {
+  if (!dateFormatter) return undefined;
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return dateFormatter(value);
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const timestamp = Math.abs(value) < 10000000000 ? value * 1000 : value;
+    const parsed = new Date(timestamp);
+    if (!Number.isNaN(parsed.getTime())) {
+      return dateFormatter(parsed);
+    }
+  }
+
+  if (typeof value === 'string' && isDateLikeString(value)) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return dateFormatter(parsed);
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeValue(value: any, nullLabel: string, dateFormatter?: DateValueFormatter) {
   if (value === null || value === undefined || value === '') return nullLabel;
+  const formattedDate = normalizeDateLikeValue(value, dateFormatter);
+  if (formattedDate !== undefined) return formattedDate;
   if (typeof value === 'object') {
-    if ('value' in value) return String(value.value);
-    if ('label' in value) return String(value.label);
+    if ('value' in value) {
+      return normalizeValue(value.value, nullLabel, dateFormatter);
+    }
+    if ('label' in value) {
+      return normalizeValue(value.label, nullLabel, dateFormatter);
+    }
     return JSON.stringify(value);
   }
   return String(value);
@@ -1023,6 +1097,14 @@ function getFieldRawValue(record: Record<string, any>, field: FieldDef) {
   for (const candidate of candidateKeys) {
     if (Object.prototype.hasOwnProperty.call(record, candidate)) {
       return record[candidate];
+    }
+
+    const normalizedCandidate = normalizeColumnLookupKey(String(candidate));
+    const matchedRecordKey = Object.keys(record).find(
+      key => normalizeColumnLookupKey(key) === normalizedCandidate,
+    );
+    if (matchedRecordKey !== undefined) {
+      return record[matchedRecordKey];
     }
   }
 
@@ -1265,6 +1347,70 @@ function formatPivotColumnValues(col: PivotCol, columnFields: FieldDef[]) {
     .join(' | ');
 }
 
+type PivotColumnHeaderCell = {
+  key: string;
+  label: string;
+  colSpan: number;
+  isLeaf: boolean;
+};
+
+function buildPivotColumnHeaderRows(
+  pivotCols: PivotCol[],
+  columnFields: FieldDef[],
+  metricSpan: number,
+  nullLabel: string,
+): PivotColumnHeaderCell[][] {
+  const depth = Math.max(1, columnFields.length);
+
+  if (!pivotCols.length) {
+    return Array.from({ length: depth }, (_, level) => [
+      {
+        key: `empty-${level}`,
+        label: level === 0 ? 'Значение' : '',
+        colSpan: metricSpan,
+        isLeaf: level === depth - 1,
+      },
+    ]);
+  }
+
+  if (!columnFields.length) {
+    return [
+      [
+        {
+          key: 'value',
+          label: 'Значение',
+          colSpan: pivotCols.length * metricSpan,
+          isLeaf: true,
+        },
+      ],
+    ];
+  }
+
+  return Array.from({ length: depth }, (_, level) => {
+    const cells: PivotColumnHeaderCell[] = [];
+
+    pivotCols.forEach(col => {
+      const values = col.values || [];
+      const label = values[level] ?? nullLabel;
+      const prefixKey = values.slice(0, level + 1).join(PATH_SEPARATOR);
+      const previous = cells[cells.length - 1];
+
+      if (previous?.key === `${level}:${prefixKey}`) {
+        previous.colSpan += metricSpan;
+      } else {
+        cells.push({
+          key: `${level}:${prefixKey}`,
+          label,
+          colSpan: metricSpan,
+          isLeaf: level === depth - 1,
+        });
+      }
+    });
+
+    return cells;
+  });
+}
+
 function arraysEqual(a: FieldDef[] = [], b: FieldDef[] = []) {
   if (a === b) return true;
   if (a.length !== b.length) return false;
@@ -1343,6 +1489,105 @@ function persistSelection(storageKey: string | undefined, selection: PersistedSe
   }
 }
 
+function publishRuntimeExportData(
+  formData: Record<string, any> | undefined,
+  data: Record<string, unknown>[],
+  colnames: string[],
+) {
+  if (typeof window === 'undefined') return;
+
+  const sliceId = formData?.slice_id ?? formData?.sliceId;
+  if (sliceId === undefined || sliceId === null) return;
+
+  window.customPivotTableRuntimeExports = {
+    ...(window.customPivotTableRuntimeExports || {}),
+    [String(sliceId)]: {
+      data,
+      colnames,
+    },
+  };
+}
+
+function stringifyRuntimeErrorPart(value: unknown) {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map(item => stringifyRuntimeErrorPart(item))
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function extractRuntimeErrorMessage(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return undefined;
+
+  const errorPayload = payload as RuntimeErrorPayload;
+  const errorsMessage = Array.isArray(errorPayload.errors)
+    ? errorPayload.errors
+        .map(
+          item =>
+            stringifyRuntimeErrorPart(item.message) ||
+            stringifyRuntimeErrorPart(item.error) ||
+            stringifyRuntimeErrorPart(item.extra?.message) ||
+            stringifyRuntimeErrorPart(item.extra?.error),
+        )
+        .find(Boolean)
+    : undefined;
+
+  return (
+    stringifyRuntimeErrorPart(errorPayload.message) ||
+    stringifyRuntimeErrorPart(errorPayload.error) ||
+    errorsMessage ||
+    stringifyRuntimeErrorPart(errorPayload.result?.message) ||
+    stringifyRuntimeErrorPart(errorPayload.result?.error)
+  );
+}
+
+async function resolveRuntimeErrorMessage(error: unknown) {
+  const fallback = 'Не удалось выполнить runtime-запрос для pivot-таблицы.';
+  const directMessage =
+    extractRuntimeErrorMessage((error as any)?.json) ||
+    extractRuntimeErrorMessage((error as any)?.response?.json);
+  if (directMessage) return directMessage;
+
+  const response =
+    typeof (error as any)?.clone === 'function'
+      ? (error as Response)
+      : typeof (error as any)?.response?.clone === 'function'
+        ? ((error as any).response as Response)
+        : undefined;
+
+  if (response) {
+    try {
+      const payload = await response.clone().json();
+      const payloadMessage = extractRuntimeErrorMessage(payload);
+      if (payloadMessage) return payloadMessage;
+    } catch {
+      // Try text body below.
+    }
+
+    try {
+      const text = await response.clone().text();
+      if (text.trim()) return text.trim();
+    } catch {
+      // Fall through to generic message.
+    }
+
+    if (response.statusText) {
+      return `${fallback} HTTP ${response.status}: ${response.statusText}`;
+    }
+  }
+
+  return (error as Error)?.message || fallback;
+}
+
 function serializePathValue(value: any) {
   if (value === null) return 'null:';
   if (value === undefined) return 'undefined:';
@@ -1355,6 +1600,14 @@ function serializePathValue(value: any) {
 
 function pathToKey(pathValues: any[]) {
   return pathValues.map(serializePathValue).join(PATH_SEPARATOR);
+}
+
+function normalizeSqlIdentifierQuotes(value: string) {
+  return value.replace(/"([A-Za-zА-Яа-я_][A-Za-zА-Яа-я0-9_]*)"/g, '$1');
+}
+
+function normalizeColumnLookupKey(value: string) {
+  return normalizeSqlIdentifierQuotes(value).trim().toLowerCase();
 }
 
 function isValidIdentifier(value: string) {
@@ -1607,6 +1860,7 @@ function aggregateNode(
   colFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
+  dateFormatter?: DateValueFormatter,
   metricSummaryMap: Record<string, MetricSummarySqlRule> = {},
   colSortMode: PivotSortMode = 'key_a_to_z',
   colSortSql = '',
@@ -1617,7 +1871,7 @@ function aggregateNode(
 
   records.forEach(item => {
     const colValues = colFields.length
-      ? colFields.map(field => normalizeValue(getFieldRawValue(item, field), nullLabel))
+      ? colFields.map(field => normalizeValue(getFieldRawValue(item, field), nullLabel, dateFormatter))
       : ['Значение'];
     const colKey = colValues.join('|');
 
@@ -1714,6 +1968,7 @@ function buildLoadedNodes(
   columnFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
+  dateFormatter?: DateValueFormatter,
   parentRawPathValues: any[] = [],
   parentPathValues: string[] = [],
 ): LoadedNode[] {
@@ -1733,14 +1988,17 @@ function buildLoadedNodes(
 
   return Array.from(grouped.entries())
     .sort((a, b) =>
-      normalizeValue(a[0], nullLabel).localeCompare(normalizeValue(b[0], nullLabel), 'ru'),
+      normalizeValue(a[0], nullLabel, dateFormatter).localeCompare(
+        normalizeValue(b[0], nullLabel, dateFormatter),
+        'ru',
+      ),
     )
     .map(([rawValue, rows]) => {
-      const name = normalizeValue(rawValue, nullLabel);
+      const name = normalizeValue(rawValue, nullLabel, dateFormatter);
       const rawPathValues = [...parentRawPathValues, rawValue];
       const pathValues = [...parentPathValues, name];
       const pathKey = pathToKey(rawPathValues);
-      const { agg } = aggregateNode(rows, columnFields, metrics, nullLabel, {}, 'subtotal');
+      const { agg } = aggregateNode(rows, columnFields, metrics, nullLabel, dateFormatter, {}, 'subtotal');
       const hasChildren = level < rowFields.length - 1;
 
       return {
@@ -1762,6 +2020,7 @@ function buildHierarchyState(
   columnFields: FieldDef[],
   metrics: MetricDef[],
   nullLabel: string,
+  dateFormatter: DateValueFormatter | undefined,
   metricSummaryRules: MetricSummarySqlRule[],
   rowSortMode: PivotSortMode = 'key_a_to_z',
   colSortMode: PivotSortMode = 'key_a_to_z',
@@ -1812,7 +2071,7 @@ function buildHierarchyState(
 
     const childNodes = Array.from(grouped.entries())
       .map(([rawValue, groupedRows]) => {
-        const name = normalizeValue(rawValue, nullLabel);
+        const name = normalizeValue(rawValue, nullLabel, dateFormatter);
         const rawPathValues = [...parentRawPathValues, rawValue];
         const pathValues = [...parentPathValues, name];
         const pathKey = pathToKey(rawPathValues);
@@ -1821,6 +2080,7 @@ function buildHierarchyState(
           columnFields,
           metrics,
           nullLabel,
+          dateFormatter,
           metricSummaryMap,
           colSortMode,
           colSortSql,
@@ -1905,6 +2165,7 @@ function buildHierarchyState(
     columnFields,
     metrics,
     nullLabel,
+    dateFormatter,
     metricSummaryMap,
     colSortMode,
     colSortSql,
@@ -1932,9 +2193,9 @@ function normalizeFetchedRecords(
   const availableColnames = [...colnames];
 
   const pickMatchingColname = (candidates: string[]) => {
-    const normalizedCandidates = candidates.map(candidate => candidate.trim().toLowerCase());
+    const normalizedCandidates = candidates.map(candidate => normalizeColumnLookupKey(candidate));
     const matched = availableColnames.find(col =>
-      normalizedCandidates.includes(col.trim().toLowerCase()),
+      normalizedCandidates.includes(normalizeColumnLookupKey(col)),
     );
     if (!matched) return undefined;
     availableColnames.splice(availableColnames.indexOf(matched), 1);
@@ -2198,6 +2459,7 @@ export default function CustomPivotTable(props: Props) {
     defaultExpandDepth = 0,
     numberFormatDigits = 2,
     numberFormat,
+    dateTimeFormat,
     metricD3Formats = [],
     rowSqlFormats = [],
     nullLabel = '—',
@@ -2255,6 +2517,7 @@ export default function CustomPivotTable(props: Props) {
   }, [width, resolvedSidebarWidthPercent]);
   const isNarrowSidebar = resolvedSidebarWidth < 260;
   const isClassicTableMode = tableViewMode === 'classic';
+  const isPivotExcelTableMode = tableViewMode === 'pivot_excel';
   const isTransposed = toBoolean(transposeTable, false);
   const normalizedColumnHeaderTiltPercent = Math.max(
     0,
@@ -2310,6 +2573,7 @@ export default function CustomPivotTable(props: Props) {
   const [isRuntimeRowLimitReached, setIsRuntimeRowLimitReached] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const requestVersionRef = useRef(0);
+  const lastPublishedPivotSelectionRef = useRef('');
   const [selectionRestored, setSelectionRestored] = useState(false);
 
   const lastExternalRowsRef = useRef<FieldDef[]>(rows || []);
@@ -2424,6 +2688,42 @@ export default function CustomPivotTable(props: Props) {
     () => metrics.filter(metric => appliedMetricKeys.includes(metric.key)),
     [metrics, appliedMetricKeys],
   );
+
+  useEffect(() => {
+    if (!selectionRestored || !hooks?.setDataMask) {
+      return;
+    }
+
+    const pivotSelection = {
+      rowFields: appliedRowFields.map(field => field.queryField || field.queryKey || field.key),
+      columnFields: appliedColumnFields.map(
+        field => field.queryField || field.queryKey || field.key,
+      ),
+      metrics: appliedMetrics.map(metric => metric.queryMetric || metric.key),
+      metricKeys: appliedMetrics.map(metric => metric.key),
+    };
+    const selectionSignature = JSON.stringify(pivotSelection);
+
+    if (lastPublishedPivotSelectionRef.current === selectionSignature) {
+      return;
+    }
+
+    lastPublishedPivotSelectionRef.current = selectionSignature;
+    hooks.setDataMask({
+      ownState: {
+        ...(ownState || {}),
+        pivotSelection,
+      },
+    });
+  }, [
+    selectionRestored,
+    hooks,
+    ownState,
+    appliedRowFields,
+    appliedColumnFields,
+    appliedMetrics,
+  ]);
+
   const resolvedMetricsLayout = runtimeMetricsLayout === 'rows' ? 'rows' : 'columns';
   const metricsOnRows = !isClassicTableMode && resolvedMetricsLayout === 'rows';
   const displayRowFields = useMemo(
@@ -2511,6 +2811,11 @@ export default function CustomPivotTable(props: Props) {
         );
         const runtimeRowLimit = Number((queryContext as any)?.queries?.[0]?.row_limit ?? 0);
         if (!cancelled && requestVersionRef.current === requestVersion) {
+          publishRuntimeExportData(
+            formData,
+            fetchedData as Record<string, unknown>[],
+            fetchedColnames,
+          );
           setQueryData(normalizedFetchedData);
           setRuntimeQuery(typeof (result as any)?.query === 'string' ? (result as any).query : '');
           setRuntimeError('');
@@ -2520,13 +2825,7 @@ export default function CustomPivotTable(props: Props) {
         }
       } catch (error) {
         if (!cancelled && requestVersionRef.current === requestVersion) {
-          const errorPayload = (error as any)?.response?.json as RuntimeErrorPayload | undefined;
-          const nextError =
-            errorPayload?.message ||
-            errorPayload?.error ||
-            errorPayload?.errors?.map(item => item.message).find(Boolean) ||
-            (error as Error)?.message ||
-            'Не удалось выполнить runtime-запрос для pivot-таблицы.';
+          const nextError = await resolveRuntimeErrorMessage(error);
           setQueryData([]);
           setRuntimeQuery('');
           setRuntimeError(nextError);
@@ -2546,6 +2845,11 @@ export default function CustomPivotTable(props: Props) {
     };
   }, [formData, runtimeFilterSignature, data, appliedRowFields, appliedColumnFields, appliedMetrics]);
 
+  const dateFormatter = useMemo(
+    () => (dateTimeFormat ? getTimeFormatter(dateTimeFormat) : undefined),
+    [dateTimeFormat],
+  );
+
   const hierarchyState = useMemo(
     () =>
       buildHierarchyState(
@@ -2554,6 +2858,7 @@ export default function CustomPivotTable(props: Props) {
         displayColumnFields,
         appliedMetrics,
         nullLabel,
+        dateFormatter,
         metricSummarySql,
         displayRowOrder,
         displayColOrder,
@@ -2566,6 +2871,7 @@ export default function CustomPivotTable(props: Props) {
       displayColumnFields,
       appliedMetrics,
       nullLabel,
+      dateFormatter,
       metricSummarySql,
       displayRowOrder,
       displayColOrder,
@@ -2737,7 +3043,10 @@ export default function CustomPivotTable(props: Props) {
 
       queryData.forEach(record => {
         const rawValue = getFieldRawValue(record, firstField);
-        widest = Math.max(widest, measureTextWidth(normalizeValue(rawValue, nullLabel), font) + 24);
+        widest = Math.max(
+          widest,
+          measureTextWidth(normalizeValue(rawValue, nullLabel, dateFormatter), font) + 24,
+        );
       });
 
       return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
@@ -2757,7 +3066,16 @@ export default function CustomPivotTable(props: Props) {
     });
 
     return Math.max(MIN_FIRST_COL_WIDTH, Math.min(FIRST_COL_WIDTH, Math.ceil(widest)));
-  }, [classicDimensionFields, compactDisplay, displayRowFields, isClassicTableMode, nullLabel, queryData, visibleNodes]);
+  }, [
+    classicDimensionFields,
+    compactDisplay,
+    dateFormatter,
+    displayRowFields,
+    isClassicTableMode,
+    nullLabel,
+    queryData,
+    visibleNodes,
+  ]);
   const metricLabelColumnWidth = useMemo(() => {
     if (!metricsOnRows) return 180;
 
@@ -2828,6 +3146,18 @@ export default function CustomPivotTable(props: Props) {
       </span>
     </span>
   );
+  const pivotColumnHeaderRows = useMemo(
+    () =>
+      buildPivotColumnHeaderRows(
+        pivotCols,
+        displayColumnFields,
+        metricsOnRows ? 1 : Math.max(appliedMetrics.length, 1),
+        nullLabel,
+      ),
+    [appliedMetrics.length, displayColumnFields, metricsOnRows, nullLabel, pivotCols],
+  );
+  const pivotColumnHeaderRowSpan =
+    pivotColumnHeaderRows.length + (metricsOnRows ? 0 : 1);
   const classicRowFormatterMap = useMemo(() => {
     const formatterCache: Record<string, ReturnType<typeof getNumberFormatter>> = {};
 
@@ -2897,6 +3227,122 @@ export default function CustomPivotTable(props: Props) {
           : node.agg[colKey]?.[metricKey],
       ),
     );
+
+  const pivotExcelVisibleRowFields = useMemo(() => {
+    if (!isPivotExcelTableMode) {
+      return displayRowFields;
+    }
+
+    const maxVisibleLevel = visibleNodes.reduce(
+      (maxLevel, node) => Math.max(maxLevel, node.level),
+      0,
+    );
+
+    return displayRowFields.slice(
+      0,
+      Math.max(1, Math.min(displayRowFields.length, maxVisibleLevel + 1)),
+    );
+  }, [displayRowFields, isPivotExcelTableMode, visibleNodes]);
+  const pivotRowHeaderColumnCount = isPivotExcelTableMode
+    ? Math.max(1, pivotExcelVisibleRowFields.length)
+    : 1;
+  const getPivotExcelLabel = (node: LoadedNode) => node.name;
+  const renderPivotRowHeaderCells = (
+    node: LoadedNode,
+    isSubtotalRow: boolean,
+    isExpandedNow: boolean,
+    rowSpan?: number,
+  ) => {
+    if (!isPivotExcelTableMode) {
+      return (
+        <td
+          rowSpan={rowSpan}
+          className="row-label-cell"
+          onClick={() => toggleExpand(node)}
+          style={{ cursor: node.hasChildren ? 'pointer' : 'default' }}
+        >
+          <span className="row-label-content">
+            <span
+              className="row-label-indent"
+              style={{ display: 'inline-block', width: node.level * 18 }}
+            />
+            {node.hasChildren ? (
+              <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
+            ) : (
+              <span className="expand-icon">•</span>
+            )}
+            <span className="row-label-text" title={node.pathValues.join(' | ') || node.name}>
+              {node.name}
+            </span>
+          </span>
+        </td>
+      );
+    }
+
+    const valueColumnIndex = Math.max(
+      0,
+      Math.min(pivotRowHeaderColumnCount - 1, node.level),
+    );
+    const label = getPivotExcelLabel(node);
+    const shouldSpanRemainingColumns = isSubtotalRow || (node.hasChildren && !isExpandedNow);
+
+    if (shouldSpanRemainingColumns) {
+      return Array.from({ length: valueColumnIndex + 1 }).map((_, columnIndex) => {
+        const isValueCell = columnIndex === valueColumnIndex;
+
+        return (
+          <td
+            key={`${node.pathKey}-excel-header-${columnIndex}`}
+            rowSpan={rowSpan}
+            colSpan={isValueCell ? pivotRowHeaderColumnCount - valueColumnIndex : undefined}
+            className="row-label-cell pivot-excel-row-label-cell"
+            onClick={isValueCell ? () => toggleExpand(node) : undefined}
+            style={{
+              cursor: isValueCell && node.hasChildren ? 'pointer' : 'default',
+            }}
+          >
+            {isValueCell ? (
+              <span className="row-label-content">
+                {node.hasChildren ? (
+                  <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
+                ) : (
+                  <span className="expand-icon" />
+                )}
+                <span className="row-label-text" title={node.pathValues.join(' | ') || label}>
+                  {label}
+                </span>
+              </span>
+            ) : null}
+          </td>
+        );
+      });
+    }
+
+    return Array.from({ length: pivotRowHeaderColumnCount }).map((_, columnIndex) => (
+      <td
+        key={`${node.pathKey}-excel-header-${columnIndex}`}
+        rowSpan={rowSpan}
+        className="row-label-cell pivot-excel-row-label-cell"
+        onClick={columnIndex === valueColumnIndex ? () => toggleExpand(node) : undefined}
+        style={{
+          cursor: columnIndex === valueColumnIndex && node.hasChildren ? 'pointer' : 'default',
+        }}
+      >
+        {columnIndex === valueColumnIndex ? (
+          <span className="row-label-content">
+            {node.hasChildren ? (
+              <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
+            ) : (
+              <span className="expand-icon" />
+            )}
+            <span className="row-label-text" title={node.pathValues.join(' | ') || label}>
+              {label}
+            </span>
+          </span>
+        ) : null}
+      </td>
+    ));
+  };
 
   const calculateColTotal = (col: PivotCol, metricKey: string) => grandAgg[col.key]?.[metricKey] ?? null;
   const calculateGrandMetricTotal = (metricKey: string) =>
@@ -3131,27 +3577,7 @@ export default function CustomPivotTable(props: Props) {
             className={`row-header ${isSubtotalRow ? 'subtotal-row' : ''}`}
           >
             {metricIndex === 0 ? (
-              <td
-                rowSpan={appliedMetrics.length}
-                className="row-label-cell"
-                onClick={() => toggleExpand(node)}
-                style={{ cursor: node.hasChildren ? 'pointer' : 'default' }}
-              >
-                <span className="row-label-content">
-                  <span
-                    className="row-label-indent"
-                    style={{ display: 'inline-block', width: node.level * 18 }}
-                  />
-                  {node.hasChildren ? (
-                    <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
-                  ) : (
-                    <span className="expand-icon">•</span>
-                  )}
-                  <span className="row-label-text" title={node.pathValues.join(' | ') || node.name}>
-                    {node.name}
-                  </span>
-                </span>
-              </td>
+              renderPivotRowHeaderCells(node, isSubtotalRow, isExpandedNow, appliedMetrics.length)
             ) : null}
 
             <td className="metric-label-cell" title={metric.label}>
@@ -3184,26 +3610,7 @@ export default function CustomPivotTable(props: Props) {
 
       return (
         <tr key={node.pathKey} className={`row-header ${isSubtotalRow ? 'subtotal-row' : ''}`}>
-          <td
-            className="row-label-cell"
-            onClick={() => toggleExpand(node)}
-            style={{ cursor: node.hasChildren ? 'pointer' : 'default' }}
-          >
-            <span className="row-label-content">
-              <span
-                className="row-label-indent"
-                style={{ display: 'inline-block', width: node.level * 18 }}
-              />
-              {node.hasChildren ? (
-                <span className="expand-icon">{isExpandedNow ? '▼' : '▶'}</span>
-              ) : (
-                <span className="expand-icon">•</span>
-              )}
-              <span className="row-label-text" title={node.pathValues.join(' | ') || node.name}>
-                {node.name}
-              </span>
-            </span>
-          </td>
+          {renderPivotRowHeaderCells(node, isSubtotalRow, isExpandedNow)}
 
           {pivotCols.map(col => (
             <React.Fragment key={col.key}>
@@ -3237,7 +3644,7 @@ export default function CustomPivotTable(props: Props) {
       return (
         <tr key={`classic-${index}`}>
           {classicDimensionFields.map((field, fieldIndex) => {
-            const value = normalizeValue(getFieldRawValue(record, field), nullLabel);
+            const value = normalizeValue(getFieldRawValue(record, field), nullLabel, dateFormatter);
 
             if (fieldIndex === 0) {
               return (
@@ -3273,7 +3680,8 @@ export default function CustomPivotTable(props: Props) {
     });
   const classicTableColSpan = Math.max(1, classicDimensionFields.length + appliedMetrics.length);
   const pivotTableColSpan =
-    (metricsOnRows ? 2 : 1) +
+    pivotRowHeaderColumnCount +
+    (metricsOnRows ? 1 : 0) +
     pivotCols.length * (metricsOnRows ? 1 : Math.max(appliedMetrics.length, 1)) +
     (showGrandTotals && showRowTotals ? 1 : 0);
 
@@ -3427,7 +3835,7 @@ export default function CustomPivotTable(props: Props) {
 
         <div className="content">
           <div className="table-scroll">
-            <table>
+            <table className="custom-pivot-table-export">
               {isClassicTableMode ? (
                 <>
                   <thead>
@@ -3479,57 +3887,82 @@ export default function CustomPivotTable(props: Props) {
                 <>
                   <thead>
                     <tr>
-                      <th className="sticky-first">
-                        {displayRowFields.length
-                          ? displayRowFields.map(field => field.label).join(' → ')
-                          : 'Строки'}
-                      </th>
-                      {metricsOnRows && <th className="sticky-second">Значения</th>}
-
-                      {appliedMetrics.length > 0 && (
-                        <th colSpan={pivotCols.length * (metricsOnRows ? 1 : appliedMetrics.length)}>
-                          {displayColumnFields.length
-                            ? displayColumnFields.map(field => field.label).join(' → ')
-                            : 'Значение'}
+                      {isPivotExcelTableMode ? (
+                        pivotExcelVisibleRowFields.length ? (
+                          pivotExcelVisibleRowFields.map((field, index) => (
+                            <th
+                              key={field.key}
+                              rowSpan={pivotColumnHeaderRowSpan}
+                              className={index === 0 ? 'sticky-first' : undefined}
+                            >
+                              {field.label}
+                            </th>
+                          ))
+                        ) : (
+                          <th className="sticky-first" rowSpan={pivotColumnHeaderRowSpan}>
+                            Строки
+                          </th>
+                        )
+                      ) : (
+                        <th className="sticky-first" rowSpan={pivotColumnHeaderRowSpan}>
+                          {displayRowFields.length
+                            ? displayRowFields.map(field => field.label).join(' → ')
+                            : 'Строки'}
+                        </th>
+                      )}
+                      {metricsOnRows && (
+                        <th
+                          className={isPivotExcelTableMode ? undefined : 'sticky-second'}
+                          rowSpan={pivotColumnHeaderRowSpan}
+                        >
+                          Значения
                         </th>
                       )}
 
-                      {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th>Итого</th>}
+                      {appliedMetrics.length > 0 &&
+                        pivotColumnHeaderRows[0]?.map(cell => (
+                          <th
+                            key={cell.key}
+                            colSpan={cell.colSpan}
+                            className="column-header-cell"
+                          >
+                            {renderColumnHeaderContent(cell.label)}
+                          </th>
+                        ))}
+
+                      {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && (
+                        <th rowSpan={pivotColumnHeaderRowSpan}>Итого</th>
+                      )}
                     </tr>
 
-                    <tr>
-                      <th className="sticky-first" />
-                      {metricsOnRows && <th className="sticky-second" />}
-                      {appliedMetrics.length > 0 && pivotCols.map(col => (
-                        <th
-                          key={`${col.key}-values`}
-                          colSpan={metricsOnRows ? 1 : appliedMetrics.length}
-                          className="column-header-cell"
-                          style={
-                            columnHeaderTiltDeg && (metricsOnRows || appliedMetrics.length === 1)
-                              ? {
-                                  width: getTiltedHeaderCellWidth(
-                                    formatPivotColumnValues(col, displayColumnFields),
-                                  ),
-                                  minWidth: getTiltedHeaderCellWidth(
-                                    formatPivotColumnValues(col, displayColumnFields),
-                                  ),
-                                  maxWidth: getTiltedHeaderCellWidth(
-                                    formatPivotColumnValues(col, displayColumnFields),
-                                  ),
-                                }
-                              : undefined
-                          }
-                        >
-                          {renderColumnHeaderContent(formatPivotColumnValues(col, displayColumnFields))}
-                        </th>
-                      ))}
-                      {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
-                    </tr>
+                    {pivotColumnHeaderRows.slice(1).map((row, rowIndex) => (
+                      <tr key={`column-header-level-${rowIndex + 1}`}>
+                        {appliedMetrics.length > 0 &&
+                          row.map(cell => (
+                            <th
+                              key={cell.key}
+                              colSpan={cell.colSpan}
+                              className="column-header-cell"
+                              style={
+                                cell.isLeaf &&
+                                columnHeaderTiltDeg &&
+                                (metricsOnRows || appliedMetrics.length === 1)
+                                  ? {
+                                      width: getTiltedHeaderCellWidth(cell.label),
+                                      minWidth: getTiltedHeaderCellWidth(cell.label),
+                                      maxWidth: getTiltedHeaderCellWidth(cell.label),
+                                    }
+                                  : undefined
+                              }
+                            >
+                              {renderColumnHeaderContent(cell.label)}
+                            </th>
+                          ))}
+                      </tr>
+                    ))}
 
                     {!metricsOnRows && (
                       <tr className="metric-header-row">
-                        <th className="sticky-first" />
                         {appliedMetrics.length > 0 && pivotCols.map(col => (
                           <React.Fragment key={`${col.key}-metric`}>
                             {appliedMetrics.map(metric => (
@@ -3551,7 +3984,6 @@ export default function CustomPivotTable(props: Props) {
                             ))}
                           </React.Fragment>
                         ))}
-                        {appliedMetrics.length > 0 && showGrandTotals && showRowTotals && <th />}
                       </tr>
                     )}
                   </thead>
@@ -3559,7 +3991,7 @@ export default function CustomPivotTable(props: Props) {
                   <tbody>
                     {!appliedMetrics.length ? (
                       <tr>
-                        <td colSpan={1}>
+                        <td colSpan={pivotTableColSpan}>
                           <div className="table-placeholder">Выберите хотя бы одну метрику в левой панели.</div>
                         </td>
                       </tr>
@@ -3583,7 +4015,14 @@ export default function CustomPivotTable(props: Props) {
                       metricsOnRows ? (
                         appliedMetrics.map((metric, metricIndex) => (
                           <tr key={`grand-${metric.key}`} className="total-row">
-                            {metricIndex === 0 ? <td rowSpan={appliedMetrics.length}><strong>Общий итог</strong></td> : null}
+                            {metricIndex === 0 ? (
+                              <td
+                                rowSpan={appliedMetrics.length}
+                                colSpan={pivotRowHeaderColumnCount}
+                              >
+                                <strong>Общий итог</strong>
+                              </td>
+                            ) : null}
                             <td className="metric-label-cell"><strong>{metric.label}</strong></td>
                             {pivotCols.map(col => (
                               <td key={`${col.key}-${metric.key}-grand`} className="metric-value">
@@ -3611,7 +4050,7 @@ export default function CustomPivotTable(props: Props) {
                         ))
                       ) : (
                         <tr className="total-row">
-                          <td><strong>Общий итог</strong></td>
+                          <td colSpan={pivotRowHeaderColumnCount}><strong>Общий итог</strong></td>
 
                           {pivotCols.map(col => (
                             <React.Fragment key={`${col.key}-grand`}>

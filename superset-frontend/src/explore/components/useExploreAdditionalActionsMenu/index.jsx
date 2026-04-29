@@ -49,7 +49,9 @@ import {
   LOG_ACTIONS_CHART_DOWNLOAD_AS_CSV_PIVOTED,
   LOG_ACTIONS_CHART_DOWNLOAD_AS_XLS,
 } from 'src/logger/LogUtils';
-import exportPivotExcel from 'src/utils/downloadAsPivotExcel';
+import exportPivotExcel, {
+  exportCustomPivotRuntimeExcel,
+} from 'src/utils/downloadAsPivotExcel';
 import ViewQueryModal from '../controls/ViewQueryModal';
 import EmbedCodeContent from '../EmbedCodeContent';
 import { useDashboardsMenuItems } from './DashboardsSubMenu';
@@ -80,6 +82,7 @@ const MENU_KEYS = {
 };
 
 const VIZ_TYPES_PIVOTABLE = [VizType.PivotTable];
+const CUSTOM_PIVOT_TABLE_VIZ_TYPE = 'customPivotTable';
 
 export const MenuItemWithCheckboxContainer = styled.div`
   ${({ theme }) => css`
@@ -210,13 +213,25 @@ export const useExploreAdditionalActionsMenu = (
   const exportExcel = useCallback(
     () =>
       canDownloadCSV
-        ? exportChart({
-            formData: latestQueryFormData,
-            resultType: 'results',
-            resultFormat: 'xlsx',
-          })
+        ? latestQueryFormData.viz_type === CUSTOM_PIVOT_TABLE_VIZ_TYPE
+          ? exportCustomPivotRuntimeExcel(
+              slice?.slice_id,
+              slice?.slice_name ?? t('pivoted_xlsx'),
+            )
+          : exportChart({
+              formData: latestQueryFormData,
+              ownState,
+              resultType: 'results',
+              resultFormat: 'xlsx',
+            })
         : null,
-    [canDownloadCSV, latestQueryFormData],
+    [
+      canDownloadCSV,
+      latestQueryFormData,
+      ownState,
+      slice?.slice_id,
+      slice?.slice_name,
+    ],
   );
 
   const copyLink = useCallback(async () => {

@@ -40,6 +40,11 @@ function parseBoolean(value: unknown, defaultValue = true): boolean {
   return Boolean(value);
 }
 
+function resolveTableViewMode(value: unknown): 'pivot' | 'pivot_excel' | 'classic' {
+  const resolved = compactString(value);
+  return resolved === 'classic' || resolved === 'pivot_excel' ? resolved : 'pivot';
+}
+
 type FieldDef = {
   key: string;
   queryKey: string;
@@ -87,6 +92,18 @@ function compactString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function normalizeSqlIdentifierQuotes(value: string) {
+  return value.replace(/"([A-Za-zА-Яа-я_][A-Za-zА-Яа-я0-9_]*)"/g, '$1');
+}
+
+function expandSqlExpressionCandidates(value?: string) {
+  const compacted = compactString(value);
+  if (!compacted) return [];
+
+  const unquoted = normalizeSqlIdentifierQuotes(compacted);
+  return Array.from(new Set([compacted, unquoted]));
 }
 
 function rgbObjectToHex(value: unknown): string | undefined {
@@ -143,15 +160,15 @@ function getFieldLabel(field: RawFieldOption): string {
 function getFieldCandidates(field: RawFieldOption): string[] {
   if (typeof field === 'string') return [field];
 
-  return [
+  return Array.from(new Set([
     compactString(field.column_name),
-    compactString(field.sqlExpression),
-    compactString(field.expression),
+    ...expandSqlExpressionCandidates(field.sqlExpression),
+    ...expandSqlExpressionCandidates(field.expression),
     compactString(field.value),
     compactString(field.optionName),
     compactString(field.label),
     compactString(field.verbose_name),
-  ].filter((candidate): candidate is string => Boolean(candidate));
+  ].filter((candidate): candidate is string => Boolean(candidate))));
 }
 
 function buildFieldDef(field: RawFieldOption, dataColumnNames: string[]): FieldDef {
@@ -357,10 +374,7 @@ export default function transformProps(chartProps: ChartProps) {
         (effectiveFormData as any).compact_display,
       false,
     ),
-    tableViewMode:
-      compactString((effectiveFormData as any).table_view_mode) === 'classic'
-        ? 'classic'
-        : 'pivot',
+    tableViewMode: resolveTableViewMode((effectiveFormData as any).table_view_mode),
     metricsLayout:
       compactString((effectiveFormData as any).metrics_layout) === 'rows'
         ? 'rows'
@@ -398,6 +412,9 @@ export default function transformProps(chartProps: ChartProps) {
       'string'
         ? String((effectiveFormData as any).yAxisFormat ?? (effectiveFormData as any).y_axis_format)
         : undefined,
+    dateTimeFormat:
+      compactString((effectiveFormData as any).dateTimeFormat) ??
+      compactString((effectiveFormData as any).date_time_format),
     cellValueAlign:
       compactString((effectiveFormData as any).cellValueAlign) ??
       compactString((effectiveFormData as any).cell_value_align) ??

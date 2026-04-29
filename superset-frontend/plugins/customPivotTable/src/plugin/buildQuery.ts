@@ -1,6 +1,11 @@
 import {
+  AdhocColumn,
   buildQueryContext,
+  ensureIsArray,
+  isPhysicalColumn,
+  QueryFormColumn,
   QueryFormData,
+  QueryFormOrderBy,
 } from '@superset-ui/core';
 
 type RawFieldOption =
@@ -40,7 +45,9 @@ function extractFieldKey(field: RawFieldOption): string {
     field.verbose_name,
   ];
 
-  const resolved = candidates.find(candidate => typeof candidate === 'string' && candidate.trim());
+  const resolved = candidates.find(
+    candidate => typeof candidate === 'string' && candidate.trim(),
+  );
   return resolved ? String(resolved).trim() : JSON.stringify(field);
 }
 
@@ -58,7 +65,10 @@ function extractMetricCandidates(metric: any): string[] {
     metric?.expression,
     metric?.sqlExpression,
   ]
-    .filter((candidate): candidate is string => typeof candidate === 'string' && candidate.trim())
+    .filter(
+      (candidate): candidate is string =>
+        typeof candidate === 'string' && candidate.trim(),
+    )
     .map(candidate => candidate.trim());
 }
 
@@ -68,16 +78,60 @@ function extractMetricKey(metric: any): string {
 }
 
 function buildMetricsPool(formData: QueryFormData) {
-  const metricsRaw = (Array.isArray((formData as any).metrics)
-    ? (formData as any).metrics
-    : [(formData as any).metrics]
+  const metricsRaw = (
+    Array.isArray((formData as any).metrics)
+      ? (formData as any).metrics
+      : [(formData as any).metrics]
   ).filter(Boolean);
-  const selectableMetrics = (Array.isArray((formData as any).selectableMetrics)
-    ? (formData as any).selectableMetrics
-    : [(formData as any).selectableMetrics]
+  const selectableMetrics = (
+    Array.isArray((formData as any).selectableMetrics)
+      ? (formData as any).selectableMetrics
+      : [(formData as any).selectableMetrics]
   ).filter(Boolean);
 
   return [...metricsRaw, ...selectableMetrics];
+}
+
+function isExportRequest(formData: QueryFormData) {
+  const resultFormat = String(
+    (formData as any).result_format ?? '',
+  ).toLowerCase();
+  return ['csv', 'xlsx'].includes(resultFormat);
+}
+
+function applyStandardPivotTimeGrain(
+  formData: QueryFormData,
+  col: QueryFormColumn,
+): QueryFormColumn {
+  const extraFormData = (formData as any).extra_form_data;
+  const timeGrain =
+    extraFormData?.time_grain_sqla || (formData as any).time_grain_sqla;
+
+  if (
+    isPhysicalColumn(col) &&
+    timeGrain &&
+    ((formData as any)?.temporal_columns_lookup?.[col] ||
+      (formData as any).granularity_sqla === col)
+  ) {
+    return {
+      timeGrain,
+      columnType: 'BASE_AXIS',
+      sqlExpression: col,
+      label: col,
+      expressionType: 'SQL',
+    } as AdhocColumn;
+  }
+
+  return col;
+}
+
+function buildStandardPivotColumns(
+  formData: QueryFormData,
+  columnFields: RawFieldOption[],
+) {
+  return Array.from(
+    new Set(ensureIsArray<QueryFormColumn>(columnFields as QueryFormColumn[])),
+  ).map(col => applyStandardPivotTimeGrain(formData, col));
 }
 
 export function buildRuntimePivotQueryContext(
@@ -104,43 +158,49 @@ export function buildRuntimePivotQueryContext(
     : [];
   const selectedMetricKeys = runtimeSelection?.metricKeys ?? [];
 
-  const columns = Array.from(
-    new Map(
-      [...selectedRowFields, ...selectedColumnFields].map(field => [
-        extractFieldKey(field),
-        field,
-      ]),
-    ).values(),
-  );
+  const columns = buildStandardPivotColumns(formData, [
+    ...selectedColumnFields,
+    ...selectedRowFields,
+  ]);
 
   const metrics = Array.from(
     new Map(
       (selectedMetrics.length
         ? selectedMetrics
         : selectedMetricKeys.length
-        ? allMetrics.filter(metric => {
-            const metricKey = extractMetricKey(metric);
-            return (
-              selectedMetricKeys.includes(metricKey) ||
-              extractMetricCandidates(metric).some(candidate =>
-                selectedMetricKeys.includes(candidate),
-              )
-            );
-          })
-        : allMetrics
+          ? allMetrics.filter(metric => {
+              const metricKey = extractMetricKey(metric);
+              return (
+                selectedMetricKeys.includes(metricKey) ||
+                extractMetricCandidates(metric).some(candidate =>
+                  selectedMetricKeys.includes(candidate),
+                )
+              );
+            })
+          : allMetrics
       ).map(metric => [extractMetricKey(metric), metric]),
     ).values(),
   );
 
-  return buildQueryContext(formData, baseQueryObject => [
-    {
-      ...baseQueryObject,
-      columns,
-      groupby: columns,
-      metrics,
-      row_limit: Number(baseQueryObject.row_limit ?? 100000),
-    },
-  ]);
+  return buildQueryContext(formData, baseQueryObject => {
+    const { series_limit_metric, order_desc } = baseQueryObject;
+    let orderBy: QueryFormOrderBy[] | undefined;
+    if (series_limit_metric) {
+      orderBy = [[series_limit_metric, !order_desc]];
+    } else if (Array.isArray(metrics) && metrics[0]) {
+      orderBy = [[metrics[0], !order_desc]];
+    }
+
+    return [
+      {
+        ...baseQueryObject,
+        orderby: orderBy,
+        columns,
+        metrics,
+        row_limit: Number(baseQueryObject.row_limit ?? 100000),
+      },
+    ];
+  });
 }
 
 export default function buildQuery(
@@ -166,6 +226,10 @@ export default function buildQuery(
         pivotSelection: runtimeSelection,
       },
     });
+  }
+
+  if (isExportRequest(formData)) {
+    return buildRuntimePivotQueryContext(formData);
   }
 
   const allMetrics = buildMetricsPool(formData);
