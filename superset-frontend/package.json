@@ -135,7 +135,7 @@
     "@visx/xychart": "^3.5.1",
     "ag-grid-community": "34.0.2",
     "ag-grid-react": "34.0.2",
-    "antd": "^5.24.6",
+    "antd": "^6.3.5",
     "chrono-node": "^2.7.8",
     "classnames": "^2.2.5",
     "currencyformatter.js": "^2.2.0",
